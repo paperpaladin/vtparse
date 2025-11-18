@@ -79,6 +79,8 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		if (b <= 0x2F)
 			GOTO(COLLECT, ESCAPE_INTERMEDIATE);
 		switch (b) {
+		case 0x5B:
+			GOTO(NONE, CSI_ENTRY);
 		}
 		/* 30-4F, 51-57, 59, 5A, 5C, 60-7E */
 		GOTO(ESC_DISPATCH, GROUND);
@@ -91,6 +93,52 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		if (b == 0x7F)
 			STAY(IGNORE);
 		GOTO(ESC_DISPATCH, GROUND);
+
+	case VTPARSE_CSI_ENTRY:
+		if (is_c0(b))
+			STAY(EXECUTE);
+		if (b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x2F)
+			GOTO(COLLECT, CSI_INTERMEDIATE);
+		if (b == 0x3A)
+			GOTO(NONE, CSI_IGNORE);
+		if (b <= 0x39 || b == 0x3B)
+			GOTO(PARAM, CSI_PARAM);
+		if (b <= 0x3F)
+			GOTO(COLLECT, CSI_PARAM);
+		GOTO(CSI_DISPATCH, GROUND);
+
+	case VTPARSE_CSI_PARAM:
+		if (is_c0(b))
+			STAY(EXECUTE);
+		if (b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x2F)
+			GOTO(COLLECT, CSI_INTERMEDIATE);
+		if ((b >= 0x30 && b <= 0x39) || b == 0x3B)
+			STAY(PARAM);
+		if (b <= 0x3F)
+			GOTO(NONE, CSI_IGNORE);	/* 3A and 3C-3F */
+		GOTO(CSI_DISPATCH, GROUND);
+
+	case VTPARSE_CSI_INTERMEDIATE:
+		if (is_c0(b))
+			STAY(EXECUTE);
+		if (b <= 0x2F)
+			STAY(COLLECT);
+		if (b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x3F)
+			GOTO(NONE, CSI_IGNORE);
+		GOTO(CSI_DISPATCH, GROUND);
+
+	case VTPARSE_CSI_IGNORE:
+		if (is_c0(b))
+			STAY(EXECUTE);
+		if (b <= 0x3F || b == 0x7F)
+			STAY(IGNORE);
+		GOTO(NONE, GROUND);	/* 40-7E: eaten, no dispatch */
 
 	default:
 		break;
@@ -148,6 +196,9 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 	case VTPARSE_ACTION_ESC_DISPATCH:
 		emit(p, a, b);
 		break;
+	case VTPARSE_ACTION_CSI_DISPATCH:
+		emit(p, a, b);
+		break;
 	case VTPARSE_ACTION_PUT:
 	case VTPARSE_ACTION_OSC_PUT:
 		emit(p, a, b);
@@ -161,6 +212,7 @@ static void state_entry(vtparse *p, vtparse_state s, unsigned char b)
 {
 	switch (s) {
 	case VTPARSE_ESCAPE:
+	case VTPARSE_CSI_ENTRY:
 		do_action(p, VTPARSE_ACTION_CLEAR, b);
 		break;
 	default:
