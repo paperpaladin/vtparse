@@ -81,6 +81,8 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		switch (b) {
 		case 0x5B:
 			GOTO(NONE, CSI_ENTRY);
+		case 0x5D:
+			GOTO(NONE, OSC_STRING);
 		}
 		/* 30-4F, 51-57, 59, 5A, 5C, 60-7E */
 		GOTO(ESC_DISPATCH, GROUND);
@@ -140,6 +142,11 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 			STAY(IGNORE);
 		GOTO(NONE, GROUND);	/* 40-7E: eaten, no dispatch */
 
+	case VTPARSE_OSC_STRING:
+		if (is_c0(b))
+			STAY(IGNORE);
+		STAY(OSC_PUT);
+
 	default:
 		break;
 	}
@@ -184,6 +191,16 @@ static void finish_params(vtparse *p)
 	 * no parameters at all must stay at zero. */
 	if (p->cur >= 0 || p->nparams_seen > 0)
 		push_param(p);
+}
+
+static void str_append(vtparse *p, unsigned char b)
+{
+	if (p->strlen < VTPARSE_STRING_MAX) {
+		p->str[p->strlen++] = (char)b;
+		p->str[p->strlen] = '\0';
+	} else {
+		p->str_truncated = 1;
+	}
 }
 
 static void do_action(vtparse *p, vtparse_action a, unsigned char b)
@@ -232,7 +249,34 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 		break;
 	case VTPARSE_ACTION_PUT:
 	case VTPARSE_ACTION_OSC_PUT:
+		str_append(p, b);
 		emit(p, a, b);
+		break;
+	case VTPARSE_ACTION_OSC_START:
+		/* The spec defines osc_start as "initialization of the buffer":
+		 * it is the buffer reset, not just a notification.  It has to
+		 * happen here because the 8-bit OSC introducer (0x9D) reaches
+		 * this state without passing through ESCAPE's clear. */
+		p->str[0] = '\0';
+		p->strlen = 0;
+		p->str_truncated = 0;
+		emit(p, a, 0);
+		break;
+	case VTPARSE_ACTION_OSC_END:
+		emit(p, a, 0);
+		break;
+	default:
+		break;
+	}
+}
+
+/* Entry and exit actions, which the published table puts on the state box
+ * rather than in a cell. */
+static void state_exit(vtparse *p, vtparse_state s, unsigned char b)
+{
+	switch (s) {
+	case VTPARSE_OSC_STRING:
+		do_action(p, VTPARSE_ACTION_OSC_END, b);
 		break;
 	default:
 		break;
@@ -245,6 +289,9 @@ static void state_entry(vtparse *p, vtparse_state s, unsigned char b)
 	case VTPARSE_ESCAPE:
 	case VTPARSE_CSI_ENTRY:
 		do_action(p, VTPARSE_ACTION_CLEAR, b);
+		break;
+	case VTPARSE_OSC_STRING:
+		do_action(p, VTPARSE_ACTION_OSC_START, b);
 		break;
 	default:
 		break;
@@ -262,9 +309,9 @@ static void step(vtparse *p, unsigned char b)
 		do_action(p, a, b);
 		return;
 	}
-	/* Spec order: the transition's own action, then the entry action of the
-	 * new state.  (An exit action joins this order when a state acquires
-	 * one.) */
+	/* Spec order: exit action of the old state, then the transition's own
+	 * action, then the entry action of the new state. */
+	state_exit(p, p->state, b);
 	do_action(p, a, b);
 	p->state = next;
 	state_entry(p, next, b);
