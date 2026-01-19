@@ -81,6 +81,10 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		switch (b) {
 		case 0x50:
 			GOTO(NONE, DCS_ENTRY);
+		case 0x58:
+		case 0x5E:
+		case 0x5F:
+			GOTO(NONE, SOS_PM_APC_STRING);
 		case 0x5B:
 			GOTO(NONE, CSI_ENTRY);
 		case 0x5D:
@@ -189,6 +193,9 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		if (is_c0(b))
 			STAY(IGNORE);
 		STAY(OSC_PUT);
+
+	case VTPARSE_SOS_PM_APC_STRING:
+		STAY(IGNORE);
 
 	default:
 		break;
