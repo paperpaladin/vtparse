@@ -3,12 +3,15 @@
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -g
 
-.PHONY: all clean
+.PHONY: all test clean
 
 all: vtparse
 
 vtparse: main.c vtparse.c vtparse.h
 	$(CC) $(CFLAGS) -o $@ main.c vtparse.c
+
+test: all
+	CC='$(CC)' CFLAGS='$(CFLAGS)' ./t/run.sh
 
 clean:
 	rm -f vtparse t/table_test t/corpus_test t/width_diff t/utf8_dump \
