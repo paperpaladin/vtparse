@@ -44,7 +44,7 @@ run "oracle 4: real escape sequence corpus" ./t/corpus_test
 # --- CLI golden output ------------------------------------------------------
 printf '\n--- CLI event stream\n'
 printf '\033[1;31mhi\033]0;win\033\\\343\201\202\033P+q544e\033\\\n' \
-	| ./vtparse > ./t/cli.got 2>&1
+	| ./vtparse -u > ./t/cli.got 2>&1
 if diff -u ./t/cli.expected ./t/cli.got; then
 	say "ok - CLI event stream matches t/cli.expected"
 else

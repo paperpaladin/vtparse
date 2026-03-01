@@ -249,7 +249,7 @@ int main(void)
 		/* Make sure the prefix really reaches the state it claims to;
 		 * otherwise part 3 would be silently testing the wrong state. */
 		vtparse p;
-		vtparse_init(&p, NULL, NULL);
+		vtparse_init(&p, NULL, NULL, 0);
 		vtparse_push(&p, (const unsigned char *)prefix[st],
 			     strlen(prefix[st]));
 		OK(p.state == (vtparse_state)st, "prefix %d reaches %s (got %s)",
@@ -288,7 +288,7 @@ int main(void)
 
 			/* Part 3: the live parser. */
 			nseen = 0;
-			vtparse_init(&p, rec, NULL);
+			vtparse_init(&p, rec, NULL, 0);
 			vtparse_push(&p, (const unsigned char *)prefix[st],
 				     strlen(prefix[st]));
 			nseen = 0;
