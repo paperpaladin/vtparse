@@ -82,7 +82,7 @@ static void on_event(vtparse *p, vtparse_action a, uint32_t ch)
 		printf("PRINT U+%04X", ch);
 		if (ch >= 0x20 && ch < 0x7F)
 			printf(" '%c'", (char)ch);
-		putchar('\n');
+		printf(" w=%d\n", vtwidth(ch));
 		break;
 	case VTPARSE_ACTION_EXECUTE:
 		printf("EXECUTE 0x%02X %s\n", ch, ctlname(ch));
@@ -148,7 +148,9 @@ int main(int argc, char **argv)
 			fprintf(stderr,
 				"usage: vtparse [-u] [file...]\n"
 				"  -u, --utf8   decode ground-state bytes >= 0x80 as UTF-8\n"
-				"Reads stdin when no file is given.  Prints one event per line.\n");
+				"Reads stdin when no file is given.  Prints one event per line.\n"
+				"Unicode %s width tables.\n",
+				vtwidth_unicode_version());
 			return 0;
 		} else {
 			nfiles++;
