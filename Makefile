@@ -1,9 +1,14 @@
 # vtparse -- SPDX-License-Identifier: GPL-3.0-or-later
+#
+# t/run.sh does the test-program compiling, so the sanitizer target is a CFLAGS
+# override and nothing more.
 
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -g
+ASAN     = -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
+	   -fsanitize=address,undefined -fno-omit-frame-pointer
 
-.PHONY: all test gen-width clean
+.PHONY: all test test-asan test-valgrind gen-width clean
 
 all: vtparse
 
@@ -12,6 +17,21 @@ vtparse: main.c vtparse.c vtparse.h width_table.h
 
 test: all
 	CC='$(CC)' CFLAGS='$(CFLAGS)' ./t/run.sh
+
+# We parse untrusted bytes, so the sanitizers are not optional diligence.
+test-asan:
+	CC='$(CC)' CFLAGS='$(ASAN)' UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+		./t/run.sh
+
+# `make test-asan` leaves sanitizer-instrumented binaries behind, and valgrind
+# refuses to run those, so force a clean build of the CLI first.
+test-valgrind:
+	rm -f vtparse
+	$(MAKE) vtparse
+	head -c 400000 /dev/urandom > /tmp/vtparse-fuzz.bin
+	valgrind --error-exitcode=9 --leak-check=full -q \
+		./vtparse -u /tmp/vtparse-fuzz.bin > /dev/null
+	@echo "valgrind: clean"
 
 # Regenerates width_table.h from the python3 in $PATH.  Deliberately NOT a
 # dependency of the build: the generated header is committed so that building

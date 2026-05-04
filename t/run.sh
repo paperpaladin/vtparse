@@ -55,6 +55,19 @@ else
 	say "not ok - CLI event stream matches t/cli.expected"
 fi
 
+# --- it must survive hostile input -----------------------------------------
+# The whole point of a non-allocating parser is that untrusted bytes cannot
+# make it misbehave; under `make test-asan` this is where that gets proved.
+printf '\n--- random input smoke test\n'
+for mode in '' '-u'; do
+	# shellcheck disable=SC2086
+	if head -c 400000 /dev/urandom | ./vtparse $mode > /dev/null 2>&1; then
+		say "ok - 400kB of /dev/urandom through vtparse ${mode:-(8-bit)}"
+	else
+		say "not ok - 400kB of /dev/urandom through vtparse ${mode:-(8-bit)}"
+	fi
+done
+
 pass=$(grep -c '^ok - ' "$OUT")
 fail=$(grep -c '^not ok - ' "$OUT")
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
