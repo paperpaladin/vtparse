@@ -123,6 +123,32 @@ sanitizer can check and a reviewer cannot.
       point
       - why: per-codepoint width is wrong for every flag, skin-tone emoji and
         Devanagari syllable, and consumers currently have to guess.
+      - oracle, located: `GraphemeBreakTest.txt` is the Unicode Consortium's
+        own conformance file and it is on this machine, at
+        `/run/host/usr/share/unicode/ucd/auxiliary/`. 853 cases, each one a
+        sequence of code points with every boundary marked, written by the
+        people who wrote the rules. That is a stronger authority than this repo
+        has for anything else, including the DEC table.
+      - the data the rules need is there too, all at 18.0.0:
+        `auxiliary/GraphemeBreakProperty.txt` for the main property,
+        `emoji/emoji-data.txt` for `Extended_Pictographic` (GB11, 456 ranges),
+        and `DerivedCoreProperties.txt` for `Indic_Conjunct_Break` (GB9c, 516
+        lines), which is the rule added in 15.1 and the one most
+        implementations get wrong.
+      - **the blocker is a version conflict, not missing data.** `width_table.h`
+        says it was generated from "Unicode 15.1.0, as shipped with the python3
+        that ran the generator", and the UCD files here are 18.0.0. Generating
+        a grapheme table from 18.0.0 next to a width table from 15.1.0 gives
+        one library two Unicode versions, and the conformance file would then
+        be testing one of them against data from the other. So this item has to
+        start by deciding which version the repo targets and regenerating the
+        width table to match -- which is its own change, with its own
+        3584-pair re-verification against the DEC table, and should be the
+        commit before this one.
+      - note that the UCD lives on a flatpak host mount rather than in this
+        container's own filesystem, so the generated tables must be committed
+        (as `width_table.h` already is) and the harness must skip loudly if the
+        corpus is absent, the way jail's does for Landlock.
 - [ ] sub-parameter support, so `SGR 38:2::10:20:30` dispatches instead of
       going to CSI_IGNORE
       - why: the published table predates ECMA-48 colon sub-parameters, and
