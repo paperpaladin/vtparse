@@ -262,7 +262,36 @@ including DCS and the string states, 7-bit and 8-bit control introducers,
 parameters with the spec's clamping, intermediates, OSC/DCS payload accumulation,
 UTF-8 decoding with the maximal-subpart rule, and widths.
 
-### What does not work
+### The suite can tell a crash from a failure
+
+`t/run.sh`'s `run()` helper used to discard the exit status on purpose:
+
+```sh
+if "$@" 2>&1 | tee -a "$OUT"; then :; else :; fi
+```
+
+A pipeline's status is the last command's, so that was `tee`'s -- and even
+capturing it would not have mattered, because the score is counted by
+grepping the log for `ok - ` lines. A test binary that dies partway through
+leaves its earlier `ok` lines in the file, emits no `not ok`, and the suite
+prints "N passed, 0 failed" with a smaller N that nothing asserts. The
+3584/3584 table check and the 52 corpus cases could both have become a
+handful without the suite noticing.
+
+Under `make test-asan` it was the difference between a sanitizer report and
+a green run: ASan exits 1, and that was the number going nowhere.
+
+Measured on the helper, against a command that prints one `ok` line and then
+exits 134:
+
+```
+OLD run():  ok=1  not-ok=0
+NEW run():  ok=1  not-ok=1
+```
+
+`tzf/t/run.sh` in the same directory already did it this way.
+
+## What does not work
 
 - **`SGR` with colon sub-parameters is silently dropped.**  The published table
   routes any CSI containing `3A` to CSI_IGNORE, so `CSI 38:2::10:20:30 m` -- the
