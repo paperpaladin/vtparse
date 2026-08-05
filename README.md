@@ -8,7 +8,7 @@ display widths and no dependencies beyond libc.
 
 ```
 $ make test
-CC='cc' CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -O2 -g' ./t/run.sh
+CC='cc' CFLAGS='-std=c11 -Wall -Wextra -Wpedantic -O2 -g -ffile-prefix-map=$(CURDIR)=.' ./t/run.sh
 === building (CC=cc CFLAGS=-std=c11 -Wall -Wextra -Wpedantic -O2 -g)
 
 --- oracle 1: published state table (14 states x 256 bytes)
@@ -136,7 +136,7 @@ ok - CLI event stream matches t/cli.expected
 ok - 400kB of /dev/urandom through vtparse (8-bit)
 ok - 400kB of /dev/urandom through vtparse -u
 
-98 passed, 0 failed
+101 passed, 0 failed
 ```
 
 Also `make test-asan` (the same 98 tests under `-fsanitize=address,undefined`) and
@@ -246,7 +246,7 @@ the entire BMP in `en_US.UTF-8`.  Agreement is **65433/65536 = 99.8428%**.  The
 103 disagreements are listed below, under Status, with the reason -- they are not
 a bug to be fixed but a version skew to be known about.
 
-**4. A corpus of sequences real programs emit.**  `t/corpus_test.c`: 46 cases,
+**4. A corpus of sequences real programs emit.**  `t/corpus_test.c`: 52 cases,
 each asserting an exact event stream including the per-byte `PUT`/`OSC_PUT`
 counts, and each replayed a second time one byte at a time to prove the chunking
 does not matter.
