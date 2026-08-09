@@ -28,9 +28,15 @@ test-asan:
 test-valgrind:
 	rm -f vtparse
 	$(MAKE) vtparse
-	head -c 400000 /dev/urandom > /tmp/vtparse-fuzz.bin
+# mktemp rather than a fixed /tmp/vtparse-fuzz.bin: the fixed name meant two
+# concurrent runs fed each other's random bytes to valgrind and neither could
+# say which input a failure came from, and the file was left behind either
+# way. -t honours $TMPDIR.
+	@f=$$(mktemp -t vtparse-fuzz.XXXXXXXX) || exit 1; \
+	head -c 400000 /dev/urandom > "$$f"; \
 	valgrind --error-exitcode=9 --leak-check=full -q \
-		./vtparse -u /tmp/vtparse-fuzz.bin > /dev/null
+		./vtparse -u "$$f" > /dev/null; \
+	rc=$$?; rm -f "$$f"; exit $$rc
 	@echo "valgrind: clean"
 
 # Regenerates width_table.h from the python3 in $PATH.  Deliberately NOT a
