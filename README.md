@@ -188,7 +188,7 @@ a TUI drew.  They almost all do it with a hand-rolled regex or an ad-hoc switch
 that gets `CSI ? 2 0 0 4 h` right and then falls apart on a DCS, an 8-bit CSI, a
 BEL in the middle of a parameter list, or a sequence split across two `read()`
 calls.  The DEC state machine handles all of those by construction and has been
-published, with a diagram, for twenty-odd years -- it is less work to encode it
+published, with a diagram, for twenty-odd years. It is less work to encode it
 than to debug the regex.
 
 Second reason: it is a parser for untrusted input on a hot path.  Every byte any
@@ -199,54 +199,54 @@ struct the right shape.
 
 Third: codepoints are not columns.  A parser that hands back bytes and leaves
 width to the caller has pushed the hardest part of the problem downstream, so the
-width table is in here, and it is checked against libc rather than asserted.
+width table is in here, and it is checked against libc, not asserted.
 
 ## The oracle
 
 Four external references, in order of strength.
 
-**1. The published state table.**  <https://vt100.net/emu/dec_ansi_parser> is a
+1. The published state table.  <https://vt100.net/emu/dec_ansi_parser> is a
 complete specification: 14 states, the actions on each cell, the entry/exit
 actions on each state, and the "anywhere" transitions.  `t/table_test.c` contains
 a second, independent transcription of it, written as declarative range lists in
-the spec's own notation (`{"00-17,19,1C-1F", A(EXECUTE), STAY}`) rather than as
+the spec's own notation (`{"00-17,19,1C-1F", A(EXECUTE), STAY}`), not as
 the if/switch chain `vtparse.c` uses, and asserts:
 
-- the spec table is **total** -- 3584/3584 cells defined, no byte falls through;
-- `vtparse_lookup()` matches it on **3584/3584** (state, byte) pairs, down to the
+- the spec table is total: 3584/3584 cells defined, no byte falls through;
+- `vtparse_lookup()` matches it on 3584/3584 (state, byte) pairs, down to the
   action and to whether the cell is a transition or a stay;
-- the **live** parser, driven into each of the 14 states with a real byte prefix
+- the live parser, driven into each of the 14 states with a real byte prefix
   and then fed the byte, lands in the predicted state on 3584/3584 pairs and
   fires the predicted callback on 3584/3584.
 
 The brief for this project asked for 4096 pairs, assuming 16 states.  The
-published table has 14 -- the DCS and string states are often described loosely
+published table has 14: the DCS and string states are often described loosely
 as "DCS_*" and "SOS/PM/APC", which can be miscounted as more.  3584 is the real
 number and it is 100%.
 
-**2. CPython's UTF-8 decoder.**  `t/utf8_diff.py` generates 88,954 byte
-sequences -- every single byte, every two-byte sequence with a sampled or
+2. CPython's UTF-8 decoder.  `t/utf8_diff.py` generates 88,954 byte
+sequences, every single byte, every two-byte sequence with a sampled or
 exhaustive second byte, the exhaustive 3-byte space `E0-EF x 80-BF x 80-BF`,
 four-byte boundary cases, the Unicode TR#36 examples, overlongs, surrogates,
-CESU-8, values above U+10FFFF, truncations, and 16,000 fuzz cases -- and compares
+CESU-8, values above U+10FFFF, truncations, and 16,000 fuzz cases, and compares
 our codepoints against `bytes.decode('utf-8', errors='replace')`.  Agreement is
-**88954/88954**.
+88954/88954.
 
 Our invalid-sequence policy, stated plainly: **one U+FFFD per maximal subpart**,
 the Unicode "Best Practices for Using U+FFFD" rule.  `E0 80 80` is three U+FFFD
 (0xE0 admits only A0-BF next, so the ill-formed subpart is one byte and each
 trailing byte is its own), while `F0 9F 92` is one U+FFFD (a truncated but
 so-far-well-formed prefix is a single subpart).  A truncated sequence at end of
-input becomes U+FFFD on `vtparse_flush()`, not before -- the next `read()` may
+input becomes U+FFFD on `vtparse_flush()`, not before: the next `read()` may
 complete it.  This is the same rule CPython uses, which is what makes the
-comparison meaningful rather than circular.
+comparison meaningful, not circular.
 
-**3. libc `wcwidth(3)`.**  `t/width_diff.c` compares `vtwidth()` with glibc over
+3. libc `wcwidth(3)`.  `t/width_diff.c` compares `vtwidth()` with glibc over
 the entire BMP in `en_US.UTF-8`.  Agreement is **65433/65536 = 99.8428%**.  The
-103 disagreements are listed below, under Status, with the reason -- they are not
+103 disagreements are listed below, under Status, with the reason. They are not
 a bug to be fixed but a version skew to be known about.
 
-**4. A corpus of sequences real programs emit.**  `t/corpus_test.c`: 52 cases,
+4. A corpus of sequences real programs emit.  `t/corpus_test.c`: 52 cases,
 each asserting an exact event stream including the per-byte `PUT`/`OSC_PUT`
 counts, and each replayed a second time one byte at a time to prove the chunking
 does not matter.
@@ -270,7 +270,7 @@ UTF-8 decoding with the maximal-subpart rule, and widths.
 if "$@" 2>&1 | tee -a "$OUT"; then :; else :; fi
 ```
 
-A pipeline's status is the last command's, so that was `tee`'s -- and even
+A pipeline's status is the last command's, so that was `tee`'s, and even
 capturing it would not have mattered, because the score is counted by
 grepping the log for `ok - ` lines. A test binary that dies partway through
 leaves its earlier `ok` lines in the file, emits no `not ok`, and the suite
@@ -293,43 +293,43 @@ NEW run():  ok=1  not-ok=1
 
 ## What does not work
 
-- **`SGR` with colon sub-parameters is silently dropped.**  The published table
-  routes any CSI containing `3A` to CSI_IGNORE, so `CSI 38:2::10:20:30 m` -- the
-  ECMA-48 colon form of 24-bit colour, which every modern terminal accepts --
+- `SGR` with colon sub-parameters is silently dropped.  The published table
+  routes any CSI containing `3A` to CSI_IGNORE, so `CSI 38:2::10:20:30 m`: the
+  ECMA-48 colon form of 24-bit colour, which every modern terminal accepts,
   produces no event at all.  The semicolon form works.  This is the single worst
   divergence from reality in the library, and it is faithful to the table.
-- **BEL does not terminate an OSC.**  `OSC 0 ; title BEL`, which is how
+- BEL does not terminate an OSC.  `OSC 0 ; title BEL`, which is how
   essentially every shell prompt sets the window title, leaves the parser in
   OSC_STRING forever, because the table says C0 controls are ignored there.  Only
   `ESC \` and `0x9C` close an OSC.  Fix is an opt-in flag; see PLAN.md.
-- **`ESC \` is reported twice over.**  Closing a string with `ESC \` produces
+- `ESC \` is reported twice over.  Closing a string with `ESC \` produces
   `OSC_END` (or `UNHOOK`) and *then* `ESC_DISPATCH '\'`, because the ESC is an
   "anywhere" transition that exits the string state and the `\` then dispatches
   from ESCAPE.  Consumers must ignore a `\` dispatch.  This is what the table
-  specifies; it is not pretty.
-- **APC, PM and SOS payloads are discarded.**  The table has no callbacks for
+  specifies. It is not pretty.
+- APC, PM and SOS payloads are discarded.  The table has no callbacks for
   them, so a Kitty graphics command vanishes entirely apart from its terminator.
-- **No grapheme clustering.**  `vtwidth()` is per codepoint, so a ZWJ emoji
+- No grapheme clustering.  `vtwidth()` is per codepoint, so a ZWJ emoji
   family measures 2 per component instead of 2 total.
-- **No charset state.**  `ESC ( 0` is reported and forgotten; DEC line-drawing
+- No charset state.  `ESC ( 0` is reported and forgotten; DEC line-drawing
   output renders as `lqqqk`.
-- **Payloads over 512 bytes are truncated** (`str_truncated` is set).  A Sixel
+- Payloads over 512 bytes are truncated (`str_truncated` is set).  A Sixel
   image or a base64 Kitty payload will not fit.  The per-byte `PUT`/`OSC_PUT`
   callbacks still deliver every byte, so a consumer that needs the whole thing
-  can accumulate it itself -- with its own allocator, deliberately.
-- **16 parameters, values clamped to 9999.**  Both are the spec's stated limits.
+  can accumulate it itself, with its own allocator, deliberately.
+- 16 parameters, values clamped to 9999.  Both are the spec's stated limits.
   xterm keeps 30 and clamps at 65535, so a sequence with more than 16 parameters
   behaves differently here than in xterm.  `nparams_seen` and `param_overflow`
   report when this happened.
-- **The parser never gives up on a truncated sequence.**  `ESC [ 1 2 ;` at end of
+- The parser never gives up on a truncated sequence.  `ESC [ 1 2 ;` at end of
   input leaves the state at CSI_PARAM indefinitely.  That is correct for a stream
-  and wrong for a file; a consumer that needs a timeout has to implement it.
+  and wrong for a file. A consumer that needs a timeout has to implement it.
 
 ### The wcwidth disagreements, stated plainly
 
 103 of 65536 BMP codepoints, 12 ranges, 99.8428% agreement.  Every one is
 Unicode version skew: our table is generated from the `unicodedata` in python3
-**3.13 (Unicode 15.1.0)**, and the glibc on this machine (Debian 2.41) ships
+3.13 (Unicode 15.1.0), and the glibc on this machine (Debian 2.41) ships
 width data from **Unicode 16.0**.
 
 | Range | vtparse | glibc | Why |
@@ -350,10 +350,10 @@ width data from **Unicode 16.0**.
 So: 17 codepoints that did not exist in our Unicode version (we return -1 for
 unassigned, as glibc does for codepoints it does not know) and 86 whose East
 Asian width was widened by Unicode 16.0.  Nothing here is a disagreement about
-what a character *is*; it is a disagreement about *when* the two tables were
+what a character *is*. It is a disagreement about *when* the two tables were
 built.  `make gen-width` on a newer python3 closes most of the gap and will open
 a different one.  Two deliberate non-drift choices, both made to match glibc and
-both defensible on their own terms: U+00AD SOFT HYPHEN is width 1 rather than 0,
+both defensible on their own terms: U+00AD SOFT HYPHEN is width 1, not 0,
 and the Arabic prepended-concatenation marks (U+0600..U+0605 and friends) are
 width 1 despite being category Cf, because Unicode excludes them from
 Default_Ignorable_Code_Point.
@@ -373,7 +373,7 @@ a parser.  The engine around it is twenty lines: look up the cell, and if it is 
 transition run the old state's exit action, the cell's action, then the new
 state's entry action, in that order, because that is the order the spec gives.
 
-Everything lives in the `vtparse` struct -- 664 bytes, stack-allocatable, no
+Everything lives in the `vtparse` struct: 664 bytes, stack-allocatable, no
 pointers to anything it does not own except the user's callback and cookie.  The
 parameter limit (16), the value clamp (9999), the intermediate count (2) and the
 payload buffer (512) exist because the struct has to have a fixed size; three of
@@ -384,7 +384,7 @@ state.  This is why C0 controls execute mid-sequence: `ESC [ 1 <CR> ; 2 m`
 dispatches `SGR 1;2` *and* executes the carriage return, in that order, because
 a program that interleaves a newline into its own escape sequence is a program a
 terminal has to survive.  It is also why `ESC` mid-sequence abandons the
-sequence rather than corrupting the next one, and why a truncated sequence
+sequence instead of corrupting the next one, and why a truncated sequence
 followed by a good one still works.
 
 GR bytes (A0-FF) are *routed* like their GL twins, per the spec's note, but the
@@ -392,16 +392,16 @@ byte handed to the callback is the original: in a Latin-1 G1 set 0xE1 is
 a-acute, and deciding that is the consumer's job, not the parser's.
 
 UTF-8 mode is a single branch in the ground state, not a layer.  Bytes >= 0x80
-in GROUND go to the decoder; everywhere else they are C1 controls, which is
+in GROUND go to the decoder. Everywhere else they are C1 controls, which is
 correct, because inside an escape sequence every byte is a control character by
 definition.  When a partial character is interrupted by an ESC, the decoder
 reports U+FFFD and asks the caller to re-push the byte, which then reaches the
-state machine -- so a write split in the middle of a character does not eat the
+state machine, so a write split in the middle of a character does not eat the
 escape sequence that follows it.
 
 The width table is three sorted range arrays (zero-width, wide, non-printable)
 with a binary search, generated by `tools/gen_width.py` from python3's
-`unicodedata` and **committed**.  Building vtparse needs gcc and nothing else;
+`unicodedata` and committed.  Building vtparse needs gcc and nothing else;
 `make gen-width` is a development step, not a build step.
 
 There is exactly one `shortcut:` marker in the library, on the decision to
@@ -418,9 +418,9 @@ category of consumer, and the conventional answer for a library this small and
 this foundational would be LGPL-2.1, MPL-2.0, or a permissive licence.
 
 It is GPL-3 anyway because the point of writing it was not adoption.  The
-valuable artifact here is a faithful, verified encoding of a published
+artifact that matters here is a faithful, verified encoding of a published
 specification, and copyleft keeps any corrected or extended version of that
-encoding available to everyone who might need it -- including whoever finds the
+encoding available to everyone who might need it, including whoever finds the
 bug in the colon sub-parameter handling.  If you want this under LGPL, the parser
 is 600 lines and the table it encodes is public: ask, or re-encode it.
 

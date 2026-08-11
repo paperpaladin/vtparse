@@ -21,7 +21,7 @@ immediately: UTF-8 decoding and display width.
 
 The parser never allocates, never reads past the byte it was given, never
 rejects input, and its state transitions match the table published at
-<https://vt100.net/emu/dec_ansi_parser> for every (state, byte) pair -- all
+<https://vt100.net/emu/dec_ansi_parser> for every (state, byte) pair: all
 14 x 256 = 3584 of them.
 
 Everything else follows from that invariant.  No allocation means every buffer
@@ -31,7 +31,7 @@ ceilings but the spec's own stated limits turned into struct fields.  Never
 reading ahead means the parser is correct across any chunking of the input,
 including one byte per call, which the corpus test asserts for every case.
 Never rejecting means a hostile byte stream changes the event stream and nothing
-else -- there is no error path to get wrong.
+else, there is no error path to get wrong.
 
 (The brief asked for 4096 pairs on the assumption of 16 states.  The published
 table has 14; 3584 is the honest number.  See README "Status".)
@@ -40,26 +40,26 @@ table has 14; 3584 is the honest number.  See README "Status".)
 
 Ranked by how much each one would catch, strongest first.
 
-1. **The published state table.**  `t/table_test.c` is an independent,
+1. The published state table.  `t/table_test.c` is an independent,
    declarative transcription of the vt100.net table ("00-17,19,1C-1F /
    execute"), deliberately in a different shape from the if/switch chain in
    `vtparse.c`.  It asserts the spec table is total, that `vtparse_lookup()`
    agrees with it on all 3584 pairs down to action and transition-vs-stay, and
-   that the *live* parser -- driven into each state with a real byte prefix --
+   that the *live* parser, driven into each state with a real byte prefix,
    lands where the table says and fires the callback the table says.  This is
-   the only oracle that is a genuine external specification rather than a
+   the only oracle that is a genuine external specification, not a
    comparison against another implementation's opinion.
-2. **CPython's UTF-8 decoder.**  `t/utf8_diff.py` decodes 88,954 generated
+2. CPython's UTF-8 decoder.  `t/utf8_diff.py` decodes 88,954 generated
    sequences, valid and invalid, with our decoder and with
    `bytes.decode('utf-8', errors='replace')`, and compares codepoint sequences.
    Invalid input is where decoders disagree, and the exhaustive three-byte sweep
    plus the TR#36 examples pin down the maximal-subpart rule exactly.
-3. **libc `wcwidth(3)`.**  `t/width_diff.c` compares `vtwidth()` against glibc
-   over the whole BMP in a UTF-8 locale.  Not a perfect oracle -- the two tables
-   come from different Unicode versions and the drift is real -- so the test
-   reports the disagreement ranges rather than hiding them, and fails only on a
+3. libc `wcwidth(3)`.  `t/width_diff.c` compares `vtwidth()` against glibc
+   over the whole BMP in a UTF-8 locale.  Not a perfect oracle: the two tables
+   come from different Unicode versions and the drift is real, so the test
+   reports the disagreement ranges instead of hiding them, and fails only on a
    collapse large enough to mean a table bug.
-4. **A corpus of sequences real programs emit.**  `t/corpus_test.c`: SGR colour
+4. A corpus of sequences real programs emit.  `t/corpus_test.c`: SGR colour
    in three forms, cursor movement, OSC title and hyperlink, bracketed paste,
    DECSET/DECRST, DECRQSS, a Sixel header, a Kitty graphics APC, C0 controls
    interleaved mid-sequence, truncation, 20 parameters and a clamped value.
@@ -73,7 +73,7 @@ sanitizer can check and a reviewer cannot.
 ## Non-goals
 
 - Rendering.  No screen buffer, no cursor, no scrollback, no ncurses, no pty.
-  The library tells you what happened; what to do about it is the consumer's
+  The library tells you what happened. What to do about it is the consumer's
   problem.
 - Interpreting the sequences.  `CSI_DISPATCH 'm'` is reported, not applied;
   vtparse does not know what SGR 38 means.
@@ -97,15 +97,15 @@ sanitizer can check and a reviewer cannot.
         and a bisect that lands between them says which.
 - [x] OSC_STRING and the payload buffer, then the five DCS states, then SOS/PM/APC
       - why: one commit per construct, each with the divergence it introduces
-        written into its own message rather than discovered later.
+        written into its own message, not discovered later.
 - [x] the 8-bit C1 introducers and GR folding
       - why: last, because every state they can reach has to exist first.
 - [x] t/run.sh and a golden CLI event stream
       - why: a test nobody can run is not a test, and every oracle after this
         is two lines in a script that already works.
 - [x] the table-driven oracle over all 3584 (state, byte) pairs
-      - why: written from the published table rather than from the code, so
-        disagreement means one of them is wrong rather than both agreeing.
+      - why: written from the published table, not from the code, so
+        disagreement means one of them is wrong, not both agreeing.
 - [x] the corpus, UTF-8 decoding, the width table, then the two differential
       oracles
       - why: wcwidth and CPython are the only external references available
@@ -117,7 +117,7 @@ sanitizer can check and a reviewer cannot.
       - why: the wcwidth disagreement list is a result, not a footnote, and it
         has to be written down where a consumer will read it.
 
-### Milestone 1 -- the things a terminal actually needs next
+### Milestone 1: the things a terminal actually needs next
 
 - [ ] grapheme cluster segmentation (UAX #29) with a `vtwidth_cluster()` entry
       point
@@ -135,17 +135,17 @@ sanitizer can check and a reviewer cannot.
         and `DerivedCoreProperties.txt` for `Indic_Conjunct_Break` (GB9c, 516
         lines), which is the rule added in 15.1 and the one most
         implementations get wrong.
-      - **the blocker is a version conflict, not missing data.** `width_table.h`
+      - the blocker is a version conflict instead of missing data. `width_table.h`
         says it was generated from "Unicode 15.1.0, as shipped with the python3
         that ran the generator", and the UCD files here are 18.0.0. Generating
         a grapheme table from 18.0.0 next to a width table from 15.1.0 gives
         one library two Unicode versions, and the conformance file would then
         be testing one of them against data from the other. So this item has to
         start by deciding which version the repo targets and regenerating the
-        width table to match -- which is its own change, with its own
+        width table to match, which is its own change, with its own
         3584-pair re-verification against the DEC table, and should be the
         commit before this one.
-      - note that the UCD lives on a flatpak host mount rather than in this
+      - note that the UCD lives on a flatpak host mount, not in this
         container's own filesystem, so the generated tables must be committed
         (as `width_table.h` already is) and the harness must skip loudly if the
         corpus is absent, the way jail's does for Landlock.
@@ -178,8 +178,8 @@ sanitizer can check and a reviewer cannot.
         guided fuzzing, and this code exists to eat hostile input.
 - [ ] regenerate the width table from UnicodeData.txt directly instead of via
       python3's `unicodedata`
-      - why: the Unicode version would then be pinned by the repo rather than
-        by whichever python3 ran the generator, which is the cause of the
+      - why: the Unicode version would then be pinned by the repo,
+        not by whichever python3 ran the generator, which is the cause of the
         entire wcwidth disagreement list.
 - [ ] UTF-8 encode, and a width-aware column-truncation helper
       - why: every consumer of this library writes both of those itself within
