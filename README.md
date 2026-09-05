@@ -238,7 +238,7 @@ the Unicode "Best Practices for Using U+FFFD" rule.  `E0 80 80` is three U+FFFD
 trailing byte is its own), while `F0 9F 92` is one U+FFFD (a truncated but
 so-far-well-formed prefix is a single subpart).  A truncated sequence at end of
 input becomes U+FFFD on `vtparse_flush()`, not before: the next `read()` may
-complete it.  This is the same rule CPython uses, which is what makes the
+complete it.  This is the same rule CPython uses, and that is what makes the
 comparison meaningful, not circular.
 
 3. libc `wcwidth(3)`.  `t/width_diff.c` compares `vtwidth()` with glibc over
@@ -413,7 +413,7 @@ diagram, and that readability *is* the correctness argument.
 
 GPL-3.0-or-later.  This is a conscious choice and it has a cost worth naming: for
 a *library*, the GPL is the restrictive option.  It means vtparse cannot be
-linked into a proprietary terminal emulator, which is a real constraint on a real
+linked into a proprietary terminal emulator, a real constraint on a real
 category of consumer, and the conventional answer for a library this small and
 this foundational would be LGPL-2.1, MPL-2.0, or a permissive licence.
 

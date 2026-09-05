@@ -13,7 +13,7 @@ immediately: UTF-8 decoding and display width.
   accumulated string payload readable from the struct.
 - `vtutf8_push()` decodes bytes to codepoints with one U+FFFD per maximal
   ill-formed subpart; `vtwidth(cp)` returns -1/0/1/2 like `wcwidth(3)`.
-- `vtparse` is a CLI that prints one line per event, which is what makes all of
+- `vtparse` is a CLI that prints one line per event, and that is what makes all of
   the above testable from a shell.
 - Not in the contract: drawing, a screen model, terminfo, a pty, an allocator.
 
@@ -133,7 +133,7 @@ sanitizer can check and a reviewer cannot.
         `auxiliary/GraphemeBreakProperty.txt` for the main property,
         `emoji/emoji-data.txt` for `Extended_Pictographic` (GB11, 456 ranges),
         and `DerivedCoreProperties.txt` for `Indic_Conjunct_Break` (GB9c, 516
-        lines), which is the rule added in 15.1 and the one most
+        lines), the rule added in 15.1 and the one most
         implementations get wrong.
       - the blocker is a version conflict instead of missing data. `width_table.h`
         says it was generated from "Unicode 15.1.0, as shipped with the python3
@@ -179,7 +179,7 @@ sanitizer can check and a reviewer cannot.
 - [ ] regenerate the width table from UnicodeData.txt directly instead of via
       python3's `unicodedata`
       - why: the Unicode version would then be pinned by the repo,
-        not by whichever python3 ran the generator, which is the cause of the
+        not by whichever python3 ran the generator, the cause of the
         entire wcwidth disagreement list.
 - [ ] UTF-8 encode, and a width-aware column-truncation helper
       - why: every consumer of this library writes both of those itself within
