@@ -191,13 +191,13 @@ calls.  The DEC state machine handles all of those by construction and has been
 published, with a diagram, for twenty-odd years. It is less work to encode it
 than to debug the regex.
 
-Second reason: it is a parser for untrusted input on a hot path.  Every byte any
+Second reason. It is a parser for untrusted input on a hot path.  Every byte any
 program writes to a terminal goes through it, including bytes written
 deliberately to break it.  That makes "never allocates, never reads ahead" worth
 more than any feature, and it makes a state machine with 14 states and a fixed
 struct the right shape.
 
-Third: codepoints are not columns.  A parser that hands back bytes and leaves
+Third. Codepoints are not columns.  A parser that hands back bytes and leaves
 width to the caller has pushed the hardest part of the problem downstream, so the
 width table is in here, and it is checked against libc, not asserted.
 
@@ -237,7 +237,7 @@ the Unicode "Best Practices for Using U+FFFD" rule.  `E0 80 80` is three U+FFFD
 (0xE0 admits only A0-BF next, so the ill-formed subpart is one byte and each
 trailing byte is its own), while `F0 9F 92` is one U+FFFD (a truncated but
 so-far-well-formed prefix is a single subpart).  A truncated sequence at end of
-input becomes U+FFFD on `vtparse_flush()`, not before: the next `read()` may
+input becomes U+FFFD on `vtparse_flush()`, not before. The next `read()` may
 complete it.  This is the same rule CPython uses, and that is what makes the
 comparison meaningful, not circular.
 
@@ -411,7 +411,7 @@ diagram, and that readability *is* the correctness argument.
 
 ## License
 
-GPL-3.0-or-later.  This is a conscious choice and it has a cost worth naming: for
+GPL-3.0-or-later.  This is a conscious choice and it has a cost worth naming. For
 a *library*, the GPL is the restrictive option.  It means vtparse cannot be
 linked into a proprietary terminal emulator, a real constraint on a real
 category of consumer, and the conventional answer for a library this small and
