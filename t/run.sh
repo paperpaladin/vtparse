@@ -37,10 +37,12 @@ printf '=== building (CC=%s CFLAGS=%s)\n' "$CC" "$CFLAGS"
 build ./vtparse main.c vtparse.c
 build ./t/table_test t/table_test.c vtparse.c
 build ./t/corpus_test t/corpus_test.c vtparse.c
+build ./t/width_diff t/width_diff.c vtparse.c
 build ./t/utf8_dump t/utf8_dump.c vtparse.c
 
 run "oracle 1: published state table (14 states x 256 bytes)" ./t/table_test
 run "oracle 4: real escape sequence corpus" ./t/corpus_test
+run "oracle 2: width vs libc wcwidth(3) over the BMP" ./t/width_diff
 run "oracle 3: UTF-8 decode vs CPython" python3 t/utf8_diff.py ./t/utf8_dump
 
 # --- CLI golden output ------------------------------------------------------
