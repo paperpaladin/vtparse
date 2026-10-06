@@ -123,8 +123,9 @@ const char *vtparse_action_name(vtparse_action a);
 /* The published transition table, exposed for the table-driven test.  This is
  * the single source of truth the engine itself uses -- the test compares it
  * against an independent transcription of the spec, and separately drives the
- * live parser to prove the engine obeys it. */
-/* *transition is 1 when the table cell names a target state (so the exit
+ * live parser to prove the engine obeys it.
+ *
+ * *transition is 1 when the table cell names a target state (so the exit
  * action of the old state and the entry action of the new one must run) and 0
  * when the cell leaves the state alone.  The distinction matters because the
  * "anywhere" cells name their target even when it is the state we are already
