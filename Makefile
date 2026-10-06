@@ -4,7 +4,7 @@
 # override and nothing more.
 
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -g
+CFLAGS  ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -g -ffile-prefix-map=$(CURDIR)=.
 ASAN     = -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
 	   -fsanitize=address,undefined -fno-omit-frame-pointer
 
