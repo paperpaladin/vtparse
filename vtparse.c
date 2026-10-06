@@ -79,6 +79,8 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		if (b <= 0x2F)
 			GOTO(COLLECT, ESCAPE_INTERMEDIATE);
 		switch (b) {
+		case 0x50:
+			GOTO(NONE, DCS_ENTRY);
 		case 0x5B:
 			GOTO(NONE, CSI_ENTRY);
 		case 0x5D:
@@ -141,6 +143,47 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		if (b <= 0x3F || b == 0x7F)
 			STAY(IGNORE);
 		GOTO(NONE, GROUND);	/* 40-7E: eaten, no dispatch */
+
+	case VTPARSE_DCS_ENTRY:
+		if (is_c0(b) || b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x2F)
+			GOTO(COLLECT, DCS_INTERMEDIATE);
+		if (b == 0x3A)
+			GOTO(NONE, DCS_IGNORE);
+		if (b <= 0x39 || b == 0x3B)
+			GOTO(PARAM, DCS_PARAM);
+		if (b <= 0x3F)
+			GOTO(COLLECT, DCS_PARAM);
+		GOTO(NONE, DCS_PASSTHROUGH);	/* HOOK is passthrough's entry */
+
+	case VTPARSE_DCS_PARAM:
+		if (is_c0(b) || b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x2F)
+			GOTO(COLLECT, DCS_INTERMEDIATE);
+		if ((b >= 0x30 && b <= 0x39) || b == 0x3B)
+			STAY(PARAM);
+		if (b <= 0x3F)
+			GOTO(NONE, DCS_IGNORE);
+		GOTO(NONE, DCS_PASSTHROUGH);
+
+	case VTPARSE_DCS_INTERMEDIATE:
+		if (is_c0(b) || b == 0x7F)
+			STAY(IGNORE);
+		if (b <= 0x2F)
+			STAY(COLLECT);
+		if (b <= 0x3F)
+			GOTO(NONE, DCS_IGNORE);
+		GOTO(NONE, DCS_PASSTHROUGH);
+
+	case VTPARSE_DCS_PASSTHROUGH:
+		if (b == 0x7F)
+			STAY(IGNORE);
+		STAY(PUT);	/* C0 controls included: the payload is binary */
+
+	case VTPARSE_DCS_IGNORE:
+		STAY(IGNORE);
 
 	case VTPARSE_OSC_STRING:
 		if (is_c0(b))
@@ -247,6 +290,10 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 		finish_params(p);
 		emit(p, a, b);
 		break;
+	case VTPARSE_ACTION_HOOK:
+		finish_params(p);
+		emit(p, a, b);
+		break;
 	case VTPARSE_ACTION_PUT:
 	case VTPARSE_ACTION_OSC_PUT:
 		str_append(p, b);
@@ -262,6 +309,7 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 		p->str_truncated = 0;
 		emit(p, a, 0);
 		break;
+	case VTPARSE_ACTION_UNHOOK:
 	case VTPARSE_ACTION_OSC_END:
 		emit(p, a, 0);
 		break;
@@ -275,6 +323,9 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 static void state_exit(vtparse *p, vtparse_state s, unsigned char b)
 {
 	switch (s) {
+	case VTPARSE_DCS_PASSTHROUGH:
+		do_action(p, VTPARSE_ACTION_UNHOOK, b);
+		break;
 	case VTPARSE_OSC_STRING:
 		do_action(p, VTPARSE_ACTION_OSC_END, b);
 		break;
@@ -288,7 +339,13 @@ static void state_entry(vtparse *p, vtparse_state s, unsigned char b)
 	switch (s) {
 	case VTPARSE_ESCAPE:
 	case VTPARSE_CSI_ENTRY:
+	case VTPARSE_DCS_ENTRY:
 		do_action(p, VTPARSE_ACTION_CLEAR, b);
+		break;
+	case VTPARSE_DCS_PASSTHROUGH:
+		/* The payload buffer belongs to the string, not to the params,
+		 * and DCS_ENTRY's clear already reset it. */
+		do_action(p, VTPARSE_ACTION_HOOK, b);
 		break;
 	case VTPARSE_OSC_STRING:
 		do_action(p, VTPARSE_ACTION_OSC_START, b);
