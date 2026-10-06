@@ -63,7 +63,28 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		GOTO(EXECUTE, GROUND);
 	case 0x1B:
 		GOTO(NONE, ESCAPE);
+	case 0x90:
+		GOTO(NONE, DCS_ENTRY);
+	case 0x98:
+	case 0x9E:
+	case 0x9F:
+		GOTO(NONE, SOS_PM_APC_STRING);
+	case 0x9B:
+		GOTO(NONE, CSI_ENTRY);
+	case 0x9C:
+		GOTO(NONE, GROUND);
+	case 0x9D:
+		GOTO(NONE, OSC_STRING);
 	}
+	/* 80-8F, 91-97, 99, 9A: the remaining C1 controls, all executed.  The
+	 * cases above already removed 90, 98, 9B-9F from this range. */
+	if (b >= 0x80 && b <= 0x9A)
+		GOTO(EXECUTE, GROUND);
+
+	/* "In all cases shown here, codes A0-FF (GR area) are treated
+	 * identically to codes 20-7F (GL area)."  So fold and continue. */
+	if (b >= 0xA0)
+		b -= 0x80;
 
 	switch (s) {
 	case VTPARSE_GROUND:
