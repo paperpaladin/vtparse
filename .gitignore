@@ -1,0 +1,10 @@
+# build products
+vtparse
+*.o
+# test binaries and their scratch output
+t/table_test
+t/corpus_test
+t/width_diff
+t/utf8_dump
+t/cli.got
+t/width_diff.out
