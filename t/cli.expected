@@ -1,6 +1,6 @@
 CSI_DISPATCH 'm' inter="" params=[1,31]
-PRINT U+0068 'h'
-PRINT U+0069 'i'
+PRINT U+0068 'h' w=1
+PRINT U+0069 'i' w=1
 OSC_START
 OSC_PUT 0x30
 OSC_PUT 0x3B
@@ -9,7 +9,7 @@ OSC_PUT 0x69
 OSC_PUT 0x6E
 OSC_END payload="0;win"
 ESC_DISPATCH '\' inter=""
-PRINT U+3042
+PRINT U+3042 w=2
 HOOK 'q' inter="+" params=[]
 PUT 0x35
 PUT 0x34

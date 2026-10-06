@@ -164,4 +164,12 @@ const char *vtparse_action_name(vtparse_action a);
 void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 		    vtparse_state *next, int *transition);
 
+/* ---- width ------------------------------------------------------------- */
+
+/* wcwidth(3)-compatible: -1 for non-printable, 0 for combining marks and
+ * other zero-width characters, 2 for East Asian Wide/Fullwidth and emoji,
+ * 1 otherwise.  Table is built in; see tools/gen_width.py. */
+int vtwidth(uint32_t cp);
+const char *vtwidth_unicode_version(void);
+
 #endif /* VTPARSE_H */

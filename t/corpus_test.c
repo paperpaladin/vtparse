@@ -217,6 +217,21 @@ static const struct tcase cases[] = {
 {NULL, NULL, 0, NULL}
 };
 
+/* Widths are a separate oracle (t/width_diff.c); these few are the spot checks
+ * that the table is wired up at all. */
+static void width_spots(void)
+{
+	OK(vtwidth('a') == 1, "width 'a' == 1");
+	OK(vtwidth(0x0301) == 0, "width U+0301 combining acute == 0");
+	OK(vtwidth(0x65E5) == 2, "width U+65E5 CJK == 2");
+	OK(vtwidth(0xFF01) == 2, "width U+FF01 fullwidth == 2");
+	OK(vtwidth(0x1F44D) == 2, "width U+1F44D emoji == 2");
+	OK(vtwidth(0x1B) == -1, "width U+001B ESC == -1");
+	OK(vtwidth(0x200B) == 0, "width U+200B zero width space == 0");
+	OK(vtwidth(0x1160) == 0, "width U+1160 hangul jamo medial == 0");
+	OK(vtwidth(0x110000) == -1, "width above U+10FFFF == -1");
+}
+
 /* bytewise: feed through vtparse_push_byte() instead of vtparse_push(), which
  * is how a consumer with a one-byte-at-a-time source (a pty read of 1) would
  * use the library.  The two must be indistinguishable. */
@@ -263,6 +278,7 @@ int main(void)
 	}
 	OK(bytewise_ok == ncases, "vtparse_push_byte matches vtparse_push on"
 	   " all %d cases", ncases);
+	width_spots();
 
 	/* Hard invariant: the struct is self-contained, so a parser can live on
 	 * the stack and the library can be used with no allocator at all. */

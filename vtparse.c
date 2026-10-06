@@ -554,3 +554,42 @@ int vtutf8_flush(vtutf8 *d, uint32_t *cp)
 	*cp = 0xFFFD;
 	return 1;
 }
+
+/* ------------------------------------------------------------------ width */
+
+#include "width_table.h"
+
+static int in_ranges(const struct vtw_range *r, size_t n, uint32_t cp)
+{
+	size_t lo = 0, hi = n;
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		if (cp < r[mid].lo)
+			hi = mid;
+		else if (cp > r[mid].hi)
+			lo = mid + 1;
+		else
+			return 1;
+	}
+	return 0;
+}
+
+#define NELEM(a) (sizeof(a) / sizeof((a)[0]))
+
+int vtwidth(uint32_t cp)
+{
+	if (cp > 0x10FFFF)
+		return -1;
+	if (in_ranges(vtw_nonprint, NELEM(vtw_nonprint), cp))
+		return -1;
+	if (in_ranges(vtw_zero, NELEM(vtw_zero), cp))
+		return 0;
+	if (in_ranges(vtw_wide, NELEM(vtw_wide), cp))
+		return 2;
+	return 1;
+}
+
+const char *vtwidth_unicode_version(void)
+{
+	return VTW_UNICODE_VERSION;
+}
