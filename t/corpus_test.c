@@ -100,7 +100,7 @@ static void on_event(vtparse *p, vtparse_action a, uint32_t ch)
 struct tcase {
 	const char *name;
 	const char *in;		/* NUL-free, so a C string is enough */
-	int utf8;		/* reserved: UTF-8 mode is not implemented yet */
+	int utf8;
 	const char *want;
 };
 
@@ -197,6 +197,23 @@ static const struct tcase cases[] = {
 /* --- charset designation ------------------------------------------------ */
 {"designate G0 ASCII", "\033(B", 0, "E:(B @GROUND"},
 {"designate G0 DEC graphics", "\033(0", 0, "E:(0 @GROUND"},
+/* --- UTF-8 mode --------------------------------------------------------- */
+{"UTF-8 2-byte", "h\303\251llo", 1,
+	"p:0068 p:00E9 p:006C p:006C p:006F @GROUND"},
+{"UTF-8 CJK (wide)", "\346\227\245\346\234\254", 1, "p:65E5 p:672C @GROUND"},
+{"UTF-8 emoji outside the BMP", "\360\237\221\215", 1, "p:1F44D @GROUND"},
+{"UTF-8 combining mark", "e\314\201", 1, "p:0065 p:0301 @GROUND"},
+{"UTF-8 invalid byte becomes U+FFFD", "a\377b", 1,
+	"p:0061 p:FFFD p:0062 @GROUND"},
+{"UTF-8 escape sequence still parses", "\033[31m\303\251", 1,
+	"C:m[31] p:00E9 @GROUND"},
+/* An ESC arriving mid-character must flush the partial character and then be
+ * honoured as an escape introducer, or a split write would eat the sequence. */
+{"UTF-8 truncated char followed by ESC", "\303\033[0m", 1,
+	"p:FFFD C:m[0] @GROUND"},
+/* Without UTF-8 mode the two bytes of U+00E9 are just two GR graphics. */
+{"8-bit mode treats UTF-8 bytes as two GR graphics", "\303\251", 0,
+	"p:00C3 p:00A9 @GROUND"},
 {NULL, NULL, 0, NULL}
 };
 
@@ -211,13 +228,14 @@ static void render(const struct tcase *c, int bytewise)
 	outlen = 0;
 	out[0] = '\0';
 	nput = 0;
-	vtparse_init(&p, on_event, NULL);
+	vtparse_init(&p, on_event, NULL, c->utf8);
 	if (bytewise) {
 		for (i = 0; i < n; i++)
 			vtparse_push_byte(&p, (unsigned char)c->in[i]);
 	} else {
 		vtparse_push(&p, (const unsigned char *)c->in, n);
 	}
+	vtparse_flush(&p);
 	add(" @%s", vtparse_state_name(p.state));
 }
 

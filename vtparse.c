@@ -402,17 +402,40 @@ static void step(vtparse *p, unsigned char b)
 	state_entry(p, next, b);
 }
 
-void vtparse_init(vtparse *p, vtparse_cb cb, void *user)
+void vtparse_init(vtparse *p, vtparse_cb cb, void *user, int utf8)
 {
 	memset(p, 0, sizeof(*p));
 	p->cb = cb;
 	p->user = user;
+	p->utf8 = utf8;
 	p->state = VTPARSE_GROUND;
 	p->cur = -1;
+	vtutf8_init(&p->u8);
 }
 
 void vtparse_push_byte(vtparse *p, unsigned char b)
 {
+	/* UTF-8 mode only diverts the ground state.  Inside an escape sequence
+	 * every byte is a 7-bit control character by definition, so there is
+	 * nothing to decode -- and bytes >= 0x80 there are C1 controls, which
+	 * the anywhere transitions must still see. */
+	if (p->utf8 && p->state == VTPARSE_GROUND &&
+	    (b >= 0x80 || p->u8.need)) {
+		uint32_t cp;
+		for (;;) {
+			int r = vtutf8_push(&p->u8, b, &cp);
+			if (r == VTUTF8_MORE)
+				return;
+			p->codepoint = cp;
+			emit(p, VTPARSE_ACTION_PRINT, cp);
+			if (r == VTUTF8_CP)
+				return;
+			/* VTUTF8_REPLACE: the byte was not consumed.  If it is
+			 * a control or ESC it has to go to the state machine. */
+			if (b < 0x80)
+				break;
+		}
+	}
 	step(p, b);
 }
 
@@ -421,6 +444,15 @@ void vtparse_push(vtparse *p, const unsigned char *buf, size_t len)
 	size_t i;
 	for (i = 0; i < len; i++)
 		vtparse_push_byte(p, buf[i]);
+}
+
+void vtparse_flush(vtparse *p)
+{
+	uint32_t cp;
+	if (p->utf8 && vtutf8_flush(&p->u8, &cp)) {
+		p->codepoint = cp;
+		emit(p, VTPARSE_ACTION_PRINT, cp);
+	}
 }
 
 /* ------------------------------------------------------------------ names */
@@ -446,4 +478,79 @@ const char *vtparse_state_name(vtparse_state s)
 const char *vtparse_action_name(vtparse_action a)
 {
 	return (unsigned)a < VTPARSE_NACTIONS ? action_names[a] : "?";
+}
+
+/* ----------------------------------------------------------------- UTF-8 */
+
+void vtutf8_init(vtutf8 *d)
+{
+	d->acc = 0;
+	d->need = 0;
+	d->lo = 0x80;
+	d->hi = 0xBF;
+}
+
+/* Our invalid-sequence policy is the Unicode 15.0 recommendation ("Best
+ * Practices for Using U+FFFD", section 3.9): emit exactly one U+FFFD per
+ * *maximal subpart* of an ill-formed subsequence.  That means the ranges for
+ * the second byte are checked per lead byte (E0 wants A0-BF, ED wants 80-9F,
+ * F0 wants 90-BF, F4 wants 80-8F), which rejects overlongs, surrogates and
+ * values above U+10FFFF at the earliest possible byte.  CPython's
+ * bytes.decode('utf-8', errors='replace') implements the same rule, which is
+ * what makes t/utf8_diff.py a meaningful differential test. */
+int vtutf8_push(vtutf8 *d, unsigned char b, uint32_t *cp)
+{
+	if (d->need == 0) {
+		if (b < 0x80) {
+			*cp = b;
+			return VTUTF8_CP;
+		}
+		if (b >= 0xC2 && b <= 0xDF) {
+			d->acc = b & 0x1Fu;
+			d->need = 1;
+			d->lo = 0x80;
+			d->hi = 0xBF;
+		} else if (b >= 0xE0 && b <= 0xEF) {
+			d->acc = b & 0x0Fu;
+			d->need = 2;
+			d->lo = (b == 0xE0) ? 0xA0 : 0x80;
+			d->hi = (b == 0xED) ? 0x9F : 0xBF;
+		} else if (b >= 0xF0 && b <= 0xF4) {
+			d->acc = b & 0x07u;
+			d->need = 3;
+			d->lo = (b == 0xF0) ? 0x90 : 0x80;
+			d->hi = (b == 0xF4) ? 0x8F : 0xBF;
+		} else {
+			/* C0, C1 (overlong two-byte leads), F5-FF, and bare
+			 * continuation bytes 80-BF: each is its own maximal
+			 * subpart of length one. */
+			*cp = 0xFFFD;
+			return VTUTF8_CP;
+		}
+		return VTUTF8_MORE;
+	}
+	if (b >= d->lo && b <= d->hi) {
+		d->acc = (d->acc << 6) | (b & 0x3Fu);
+		d->lo = 0x80;
+		d->hi = 0xBF;
+		if (--d->need == 0) {
+			*cp = d->acc;
+			return VTUTF8_CP;
+		}
+		return VTUTF8_MORE;
+	}
+	/* The maximal subpart ended before this byte.  Report it and make the
+	 * caller re-push b, which may legally start a new sequence. */
+	vtutf8_init(d);
+	*cp = 0xFFFD;
+	return VTUTF8_REPLACE;
+}
+
+int vtutf8_flush(vtutf8 *d, uint32_t *cp)
+{
+	if (d->need == 0)
+		return 0;
+	vtutf8_init(d);
+	*cp = 0xFFFD;
+	return 1;
 }

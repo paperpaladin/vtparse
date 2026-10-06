@@ -138,19 +138,23 @@ static void run(vtparse *p, FILE *f)
 int main(int argc, char **argv)
 {
 	vtparse p;
-	int i, nfiles = 0;
+	int utf8 = 0, i, nfiles = 0;
 
 	for (i = 1; i < argc; i++) {
-		if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+		if (!strcmp(argv[i], "-u") || !strcmp(argv[i], "--utf8")) {
+			utf8 = 1;
+			argv[i] = NULL;
+		} else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
 			fprintf(stderr,
-				"usage: vtparse [file...]\n"
+				"usage: vtparse [-u] [file...]\n"
+				"  -u, --utf8   decode ground-state bytes >= 0x80 as UTF-8\n"
 				"Reads stdin when no file is given.  Prints one event per line.\n");
 			return 0;
 		} else {
 			nfiles++;
 		}
 	}
-	vtparse_init(&p, on_event, NULL);
+	vtparse_init(&p, on_event, NULL, utf8);
 	if (!nfiles) {
 		run(&p, stdin);
 	} else {
@@ -167,6 +171,7 @@ int main(int argc, char **argv)
 			fclose(f);
 		}
 	}
+	vtparse_flush(&p);
 	/* The final state is part of the answer: a truncated escape sequence
 	 * leaves the parser mid-sequence on purpose, because the next read()
 	 * might complete it.  Printing it makes that visible to a test. */

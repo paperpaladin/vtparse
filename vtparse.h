@@ -82,6 +82,26 @@ typedef enum {
 #define VTPARSE_MAX_INTERMEDIATES 2	/* spec: two is enough for every real seq */
 #define VTPARSE_STRING_MAX      512	/* OSC/DCS payload kept, in bytes */
 
+/* ---- UTF-8 ------------------------------------------------------------- */
+
+typedef struct {
+	uint32_t acc;
+	int need;
+	unsigned char lo, hi;
+} vtutf8;
+
+#define VTUTF8_MORE     0	/* byte consumed, no codepoint yet */
+#define VTUTF8_CP       1	/* *cp is a decoded codepoint */
+#define VTUTF8_REPLACE  2	/* *cp is U+FFFD; the byte must be re-pushed */
+
+void vtutf8_init(vtutf8 *d);
+/* Push one byte.  On VTUTF8_REPLACE the caller MUST push the same byte again:
+ * the invalid sequence ended *before* this byte, and this byte may legally
+ * start a new one.  That is what gives us one U+FFFD per maximal subpart. */
+int vtutf8_push(vtutf8 *d, unsigned char b, uint32_t *cp);
+/* End of input: 1 if a truncated sequence produced a final U+FFFD. */
+int vtutf8_flush(vtutf8 *d, uint32_t *cp);
+
 typedef struct vtparse vtparse;
 typedef void (*vtparse_cb)(vtparse *p, vtparse_action action, uint32_t ch);
 
@@ -105,17 +125,28 @@ struct vtparse {
 	size_t strlen;
 	int str_truncated;
 
-	/* The codepoint for a PRINT action.  Always the byte itself until
-	 * UTF-8 decoding lands on top of this field. */
+	/* The codepoint for a PRINT action.  In 8-bit mode this is always the
+	 * byte itself.  In UTF-8 mode it is the decoded scalar value. */
 	uint32_t codepoint;
 
+	/* UTF-8 mode (off by default: the default parser is the spec's 8-bit
+	 * machine, which is what the transition-table oracle tests). */
+	int utf8;
+	vtutf8 u8;		/* decoder state, only touched in UTF-8 mode */
 };
 
-void vtparse_init(vtparse *p, vtparse_cb cb, void *user);
+/* Init.  utf8 != 0 routes ground-state bytes >= 0x80 through the UTF-8 decoder
+ * instead of treating 80-9F as C1 controls and A0-FF as GR graphics. */
+void vtparse_init(vtparse *p, vtparse_cb cb, void *user, int utf8);
 
 /* Feed bytes.  Never allocates, never reads past buf[len-1], never fails. */
 void vtparse_push(vtparse *p, const unsigned char *buf, size_t len);
 void vtparse_push_byte(vtparse *p, unsigned char b);
+
+/* End of input: flush a half-decoded UTF-8 sequence as U+FFFD.  Does NOT
+ * terminate an unfinished escape sequence -- a truncated sequence stays
+ * pending, because the next read() may complete it.  See README "Status". */
+void vtparse_flush(vtparse *p);
 
 const char *vtparse_state_name(vtparse_state s);
 const char *vtparse_action_name(vtparse_action a);

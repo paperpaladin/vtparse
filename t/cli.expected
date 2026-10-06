@@ -9,9 +9,7 @@ OSC_PUT 0x69
 OSC_PUT 0x6E
 OSC_END payload="0;win"
 ESC_DISPATCH '\' inter=""
-PRINT U+00E3
-EXECUTE 0x81 C1
-EXECUTE 0x82 C1
+PRINT U+3042
 HOOK 'q' inter="+" params=[]
 PUT 0x35
 PUT 0x34
