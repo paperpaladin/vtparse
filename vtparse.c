@@ -167,6 +167,25 @@ static void clear_seq(vtparse *p)
 	p->str_truncated = 0;
 }
 
+static void push_param(vtparse *p)
+{
+	if (p->nparams < VTPARSE_MAX_PARAMS)
+		p->params[p->nparams++] = p->cur;
+	/* else: "If more than 16 parameters arrive, all the extra parameters
+	 * are silently ignored."  We count them anyway so a consumer can tell
+	 * that truncation happened instead of silently mis-rendering. */
+	p->nparams_seen++;
+	p->cur = -1;
+}
+
+static void finish_params(vtparse *p)
+{
+	/* A trailing parameter has no separator to close it, and "CSI H" with
+	 * no parameters at all must stay at zero. */
+	if (p->cur >= 0 || p->nparams_seen > 0)
+		push_param(p);
+}
+
 static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 {
 	switch (a) {
@@ -183,8 +202,19 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 			p->intermediate_overflow = 1;
 		break;
 	case VTPARSE_ACTION_PARAM:
-		/* shortcut: the digits are routed but not yet stored, so every
-		 * dispatch reports zero parameters.  Next commit. */
+		if (b == ';') {
+			push_param(p);
+		} else {
+			int32_t v = (p->cur < 0 ? 0 : p->cur) * 10 + (b - '0');
+			/* "any parameter greater than 9999 is set to 9999" --
+			 * clamp rather than wrap, so a hostile CSI 99999999m
+			 * cannot overflow into a negative row/column. */
+			if (v > VTPARSE_PARAM_MAX) {
+				v = VTPARSE_PARAM_MAX;
+				p->param_overflow = 1;
+			}
+			p->cur = v;
+		}
 		break;
 	case VTPARSE_ACTION_PRINT:
 		p->codepoint = b;
@@ -197,6 +227,7 @@ static void do_action(vtparse *p, vtparse_action a, unsigned char b)
 		emit(p, a, b);
 		break;
 	case VTPARSE_ACTION_CSI_DISPATCH:
+		finish_params(p);
 		emit(p, a, b);
 		break;
 	case VTPARSE_ACTION_PUT:
