@@ -39,10 +39,12 @@ test-valgrind:
 	rc=$$?; rm -f "$$f"; exit $$rc
 	@echo "valgrind: clean"
 
-# Regenerates width_table.h from the python3 in $PATH.  Deliberately NOT a
-# dependency of the build: the generated header is committed so that building
-# vtparse needs gcc and nothing else.  Re-running this changes the Unicode
-# version and therefore the wcwidth disagreement list quoted in README.md.
+# Regenerates width_table.h from the Unicode Character Database.  Deliberately
+# NOT a dependency of the build: the generated header is committed so that
+# building vtparse needs gcc and nothing else, and the UCD is not in this
+# repository.  Re-running this changes the Unicode version and therefore the
+# wcwidth disagreement list quoted in README.md.  Set VTPARSE_UCD to point at
+# a UCD directory other than the two the generators look in by default.
 gen-width:
 	python3 tools/gen_width.py width_table.h
 
