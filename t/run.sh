@@ -19,7 +19,26 @@ run() { # run <label> <command...>
 	label=$1
 	shift
 	printf '\n--- %s\n' "$label"
-	if "$@" 2>&1 | tee -a "$OUT"; then :; else :; fi
+	# The status is checked, and it used to be thrown away deliberately:
+	# `if "$@" | tee -a "$OUT"; then :; else :; fi`. A pipeline's status is
+	# the last command's, so that was tee's -- but even capturing it would
+	# not have been enough, because the score is counted by grepping for
+	# "ok - " lines. A test binary that dies partway through leaves its
+	# earlier ok lines in the file, emits no "not ok", and the suite prints
+	# "N passed, 0 failed" with a smaller N that nothing asserts. The
+	# 3584/3584 table check and the 52 corpus cases can both silently
+	# become a handful.
+	#
+	# Under test-asan this is the difference between a sanitizer report and
+	# a green run: ASan exits 1, which went straight into the bit bucket.
+	# tzf/t/run.sh in the same directory already does it this way.
+	out=$("$@" 2>&1)
+	rc=$?
+	printf '%s\n' "$out" | tee -a "$OUT"
+	if [ "$rc" -ne 0 ]; then
+		printf 'not ok - %s exited %s (crash, abort or sanitizer)\n' \
+			"$label" "$rc" | tee -a "$OUT"
+	fi
 }
 
 build() { # build <output> <sources...>
