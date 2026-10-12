@@ -258,6 +258,7 @@ int main(void)
 {
 	const struct tcase *c;
 	int bytewise_ok = 0, ncases = 0;
+#define CORPUS_CASES 52
 
 	for (c = cases; c->name; c++) {
 		char whole[sizeof(out)];
@@ -276,6 +277,13 @@ int main(void)
 			printf("# bytewise differs for %s: %s vs %s\n",
 			       c->name, whole + 1, out + 1);
 	}
+	/* The count is pinned, not just printed. `bytewise_ok == ncases` holds
+	 * for 52 cases and equally for none: replacing the cases[] table with
+	 * a single {NULL} terminator gave "ok - vtparse_push_byte matches
+	 * vtparse_push on all 0 cases" and 46 passed, 0 failed. 52 is what the
+	 * table holds; it moves when a case is added, in the same commit. */
+	OK(ncases == CORPUS_CASES, "the corpus holds its %d cases (found %d)",
+	   CORPUS_CASES, ncases);
 	OK(bytewise_ok == ncases, "vtparse_push_byte matches vtparse_push on"
 	   " all %d cases", ncases);
 	width_spots();

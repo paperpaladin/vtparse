@@ -150,6 +150,11 @@ static const struct rule r_sos_pm_apc[] = {
 	{NULL, 0, 0}
 };
 
+/* The published state table has 14 states. This is a fact about the table,
+ * not about this implementation, so it is spelled out rather than read from
+ * vtparse.h -- see the OK() that uses it. */
+#define PUBLISHED_STATES 14
+
 static const struct rule *const spec[VTPARSE_NSTATES] = {
 	r_ground, r_escape, r_escape_intermediate, r_csi_entry, r_csi_param,
 	r_csi_intermediate, r_csi_ignore, r_dcs_entry, r_dcs_param,
@@ -328,8 +333,19 @@ int main(void)
 		}
 	}
 
-	OK(pairs == VTPARSE_NSTATES * 256, "%d (state,byte) pairs enumerated"
-	   " (%d states x 256)", pairs, VTPARSE_NSTATES);
+	/* PUBLISHED_STATES, not VTPARSE_NSTATES. The published table has 14
+	 * states, and taking the denominator from the enum in vtparse.h makes
+	 * this an assertion about the implementation agreeing with itself:
+	 * adding a state to the enum (and extending the spec[] and prefix[]
+	 * arrays beside it) made this report "3840 (state,byte) pairs
+	 * enumerated (15 states x 256)" and pass, while the section heading
+	 * still printed "14 states x 256". 14 is a fact about Paul
+	 * Williams' table, so it is written down here as one. */
+	OK(VTPARSE_NSTATES == PUBLISHED_STATES,
+	   "the implementation has the published table's %d states (has %d)",
+	   PUBLISHED_STATES, VTPARSE_NSTATES);
+	OK(pairs == PUBLISHED_STATES * 256, "%d (state,byte) pairs enumerated"
+	   " (%d states x 256)", pairs, PUBLISHED_STATES);
 	OK(total_ok == pairs, "published table is total: %d/%d cells defined",
 	   total_ok, pairs);
 	OK(table_ok == pairs, "vtparse_lookup matches the published table:"

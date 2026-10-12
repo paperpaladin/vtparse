@@ -28,6 +28,10 @@ CONT_SAMPLE = [0x00, 0x0A, 0x41, 0x7F, 0x80, 0x8F, 0x9F, 0xA0, 0xBF, 0xC0,
                0xE0, 0xF0, 0xFF]
 
 
+# What cases() produces, pinned so an empty generator cannot pass. See main().
+EXPECTED_CASES = 88954
+
+
 def cases():
     """Yield (group name, bytes) pairs.  Structured first, then fuzz."""
     name = 'every single byte'
@@ -148,10 +152,19 @@ def main():
             fail = 1
             h, want, mine = examples[name]
             print('#   e.g. %s: cpython=[%s] vtparse=[%s]' % (h, want, mine))
-    print('# %d cases, %d agree, %d differ' % (total_ok + total_bad,
-                                               total_ok, total_bad))
+    total = total_ok + total_bad
+    print('# %d cases, %d agree, %d differ' % (total, total_ok, total_bad))
+    # The denominator is pinned. `total_bad == 0` holds for 88954 sequences and
+    # equally for none: making cases() yield nothing gave
+    # "ok - 0/0 sequences decode identically to CPython" and 88 passed,
+    # 0 failed. The generator is deterministic, so this is an exact number and
+    # it moves when cases() does, in the same commit.
+    print('%sok - the generator produced its %d sequences (produced %d)'
+          % ('' if total == EXPECTED_CASES else 'not ', EXPECTED_CASES, total))
+    if total != EXPECTED_CASES:
+        fail = 1
     print('%sok - %d/%d sequences decode identically to CPython'
-          % ('' if total_bad == 0 else 'not ', total_ok, total_ok + total_bad))
+          % ('' if total_bad == 0 else 'not ', total_ok, total))
     return fail
 
 
