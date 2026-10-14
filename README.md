@@ -219,8 +219,7 @@ the if/switch chain `vtparse.c` uses, and asserts:
   and then fed the byte, lands in the predicted state on 3584/3584 pairs and
   fires the predicted callback on 3584/3584.
 
-The brief for this project asked for 4096 pairs, assuming 16 states.  The
-published table has 14: the DCS and string states are often described loosely
+The brief for this project asked for 4096 pairs, assuming 16 states.  That published table has 14: the DCS and string states are often described loosely
 as "DCS_*" and "SOS/PM/APC", which can be miscounted as more.  3584 is the real
 number and it is 100%.
 
