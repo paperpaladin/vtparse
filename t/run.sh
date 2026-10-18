@@ -57,12 +57,26 @@ build ./vtparse main.c vtparse.c
 build ./t/table_test t/table_test.c vtparse.c
 build ./t/corpus_test t/corpus_test.c vtparse.c
 build ./t/width_diff t/width_diff.c vtparse.c
+build ./t/grapheme_test t/grapheme_test.c vtparse.c
 build ./t/utf8_dump t/utf8_dump.c vtparse.c
 
 run "oracle 1: published state table (14 states x 256 bytes)" ./t/table_test
 run "oracle 4: real escape sequence corpus" ./t/corpus_test
 run "oracle 2: width vs libc wcwidth(3) over the BMP" ./t/width_diff
 run "oracle 3: UTF-8 decode vs CPython" python3 t/utf8_diff.py ./t/utf8_dump
+
+# The UCD is not in this repository; on this machine it is a flatpak host
+# mount.  Say so before the test runs, so that a run without it does not look
+# like a run with it: the eleven per-rule assertions and the 853-case score
+# simply are not in the total, and a shrinking denominator that nothing
+# announces is how a conformance number stops meaning anything.
+GBT=${VTPARSE_UCD:-/run/host/usr/share/unicode/ucd}/auxiliary/GraphemeBreakTest.txt
+if [ ! -f "$GBT" ]; then
+	printf '\n!!! SKIP: %s is missing.\n' "$GBT"
+	printf '!!! UAX #29 conformance is NOT CHECKED on this run; 15 of the\n'
+	printf '!!! suite'"'"'s assertions are absent, not passing.\n'
+fi
+run "oracle 5: UAX #29 vs GraphemeBreakTest.txt" ./t/grapheme_test
 
 # --- CLI golden output ------------------------------------------------------
 printf '\n--- CLI event stream\n'

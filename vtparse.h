@@ -172,4 +172,40 @@ void vtparse_lookup(vtparse_state s, unsigned char b, vtparse_action *action,
 int vtwidth(uint32_t cp);
 const char *vtwidth_unicode_version(void);
 
+/* ---- grapheme clusters (UAX #29) --------------------------------------- */
+
+/* Extended grapheme cluster boundaries, rules GB1 through GB999 of UAX #29,
+ * at the Unicode version printed in grapheme_table.h.  Checked against the
+ * Unicode Consortium's own GraphemeBreakTest.txt; see t/grapheme_test.c.
+ *
+ * Two bytes of state and no allocation, same as the rest of this library.
+ * The rules need only this much history: the previous code point's class,
+ * the parity of the run of Regional_Indicators ending at it (GB12/GB13),
+ * whether an Extended_Pictographic ... ZWJ sequence ends at it (GB11), and
+ * whether an InCB=Linker followed by InCB=Extend only ends at it (GB9c).
+ * Nothing in UAX #29 needs lookahead, which is why this fits the parser's
+ * "never read past the byte you were given" rule unchanged. */
+typedef struct {
+	uint8_t prev;		/* GCB class of the last code point seen */
+	uint8_t flags;		/* the three bits of history described above */
+} vtgb;
+
+void vtgb_init(vtgb *g);
+/* 1 if a cluster boundary falls immediately before cp, 0 if not.  The first
+ * call after vtgb_init() returns 1, which is GB1 (sot divides Any). */
+int vtgb_break(vtgb *g, uint32_t cp);
+
+/* Display width of the first grapheme cluster in cps[0..n), with its length
+ * in code points stored through len (which may be NULL).  Reads no further
+ * than the end of that cluster, and never past cps[n-1].
+ *
+ * Unlike vtwidth(), this has no external oracle: UAX #29 says where clusters
+ * begin and end, and says nothing about how many columns one occupies.  The
+ * convention here is the widest member of the cluster, so a flag, a skin-tone
+ * emoji and a ZWJ family are 2 rather than the sum of their parts, with one
+ * exception: a cluster whose base is Extended_Pictographic and which contains
+ * U+FE0F VARIATION SELECTOR-16 is 2, because the selector is a request for
+ * emoji presentation.  See README "What does not work". */
+int vtwidth_cluster(const uint32_t *cps, size_t n, size_t *len);
+
 #endif /* VTPARSE_H */

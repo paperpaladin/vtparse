@@ -593,3 +593,164 @@ const char *vtwidth_unicode_version(void)
 {
 	return VTW_UNICODE_VERSION;
 }
+
+/* -------------------------------------------------------------- grapheme */
+
+#include "grapheme_table.h"
+
+/* The three bits of left context the rules need.  GB9c and GB11 are both
+ * "this regular expression ends at the previous code point", and both of
+ * those expressions are closed under a single bit because the only thing
+ * that can extend them is a character class test on the code point just
+ * read. */
+#define GB_RI_ODD	0x01	/* an odd-length run of RI ends at prev */
+#define GB_PICT_ZWJ	0x02	/* ExtPict Extend* ZWJ ends at prev (GB11) */
+#define GB_PICT_RUN	0x04	/* ExtPict Extend* ends at prev */
+#define GB_LINKER	0x08	/* InCB=Linker InCB=Extend* ends at prev (GB9c) */
+#define GB_SOT		0x10	/* nothing has been seen yet */
+
+static uint8_t gb_flags(uint32_t cp)
+{
+	size_t lo = 0, hi = sizeof(vtgb_tbl) / sizeof(vtgb_tbl[0]);
+
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		if (cp < vtgb_tbl[mid].lo)
+			hi = mid;
+		else if (cp > vtgb_tbl[mid].hi)
+			lo = mid + 1;
+		else
+			return vtgb_tbl[mid].f;
+	}
+	return 0;	/* GCB=Other, InCB=None, not Extended_Pictographic */
+}
+
+void vtgb_init(vtgb *g)
+{
+	g->prev = VTGB_OTHER;
+	g->flags = GB_SOT;
+}
+
+int vtgb_break(vtgb *g, uint32_t cp)
+{
+	uint8_t f = gb_flags(cp);
+	int cls = f & 0x0F;
+	int incb = (f >> 4) & 0x03;
+	int pict = (f & VTGB_PICT_BIT) != 0;
+	int p = g->prev;
+	int st = g->flags;
+	int brk;
+
+	/* The rules in the order UAX #29 gives them; the first that matches
+	 * decides, which is what makes the chain a faithful transcription
+	 * rather than a reordering that happens to agree. */
+	if (st & GB_SOT)
+		brk = 1;					/* GB1 */
+	else if (p == VTGB_CR && cls == VTGB_LF)
+		brk = 0;					/* GB3 */
+	else if (p == VTGB_CR || p == VTGB_LF || p == VTGB_CONTROL)
+		brk = 1;					/* GB4 */
+	else if (cls == VTGB_CR || cls == VTGB_LF || cls == VTGB_CONTROL)
+		brk = 1;					/* GB5 */
+	else if (p == VTGB_L && (cls == VTGB_L || cls == VTGB_V ||
+				 cls == VTGB_LV || cls == VTGB_LVT))
+		brk = 0;					/* GB6 */
+	else if ((p == VTGB_LV || p == VTGB_V) &&
+		 (cls == VTGB_V || cls == VTGB_T))
+		brk = 0;					/* GB7 */
+	else if ((p == VTGB_LVT || p == VTGB_T) && cls == VTGB_T)
+		brk = 0;					/* GB8 */
+	else if (cls == VTGB_EXTEND || cls == VTGB_ZWJ)
+		brk = 0;					/* GB9 */
+	else if (cls == VTGB_SPACINGMARK)
+		brk = 0;					/* GB9a */
+	else if (p == VTGB_PREPEND)
+		brk = 0;					/* GB9b */
+	else if ((st & GB_LINKER) && incb == VTGB_INCB_CONSONANT)
+		brk = 0;					/* GB9c */
+	else if ((st & GB_PICT_ZWJ) && pict)
+		brk = 0;					/* GB11 */
+	else if (cls == VTGB_REGIONAL_INDICATOR && (st & GB_RI_ODD))
+		brk = 0;					/* GB12, GB13 */
+	else
+		brk = 1;					/* GB999 */
+
+	/* GB12/GB13 count RI from the start of the run, so the parity flag
+	 * toggles along the run and clears on anything else. */
+	st = (cls == VTGB_REGIONAL_INDICATOR) ? (st ^ GB_RI_ODD) & GB_RI_ODD : 0;
+
+	/* GB11's left side is ExtPict Extend* ZWJ.  Note Extend* here is the
+	 * Grapheme_Cluster_Break class, not InCB, and ZWJ is not in it. */
+	if (pict)
+		st |= GB_PICT_RUN;
+	else if ((g->flags & GB_PICT_RUN) && cls == VTGB_EXTEND)
+		st |= GB_PICT_RUN;
+	else if ((g->flags & GB_PICT_RUN) && cls == VTGB_ZWJ)
+		st |= GB_PICT_ZWJ;
+
+	/* GB9c in Unicode 18.0 is \p{InCB=Linker} \p{InCB=Extend}* x
+	 * \p{InCB=Consonant}.  Earlier versions wrote it with a leading
+	 * \p{InCB=Consonant} and the intervening classes spelled out; the
+	 * conformance file for 18.0 has cases that the older form gets wrong
+	 * (U+11A3A, an InCB=Linker that is not preceded by a Consonant). */
+	if (incb == VTGB_INCB_LINKER)
+		st |= GB_LINKER;
+	else if ((g->flags & GB_LINKER) && incb == VTGB_INCB_EXTEND)
+		st |= GB_LINKER;
+
+	g->prev = (uint8_t)cls;
+	g->flags = (uint8_t)st;
+	return brk;
+}
+
+int vtwidth_cluster(const uint32_t *cps, size_t n, size_t *len)
+{
+	vtgb g;
+	size_t i, k;
+	int w, mx = 0, vs16 = 0;
+	uint8_t base;
+
+	if (len)
+		*len = 0;
+	if (n == 0)
+		return 0;
+	vtgb_init(&g);
+	(void)vtgb_break(&g, cps[0]);	/* GB1; the caller already knows */
+	for (i = 1; i < n && !vtgb_break(&g, cps[i]); i++)
+		;
+	if (len)
+		*len = i;
+
+	if (vtwidth(cps[0]) < 0)
+		return -1;		/* a non-printable base stays -1 */
+	for (k = 0; k < i; k++) {
+		w = vtwidth(cps[k]);
+		if (w > mx)
+			mx = w;
+		if (cps[k] == 0xFE0F)
+			vs16 = 1;
+	}
+	/* shortcut: the width of a cluster is a convention, not a measurement.
+	 * Ceiling: it cannot know what a font will do, so a ZWJ sequence a
+	 * renderer does not support (two glyphs side by side) is reported as 2
+	 * and drawn as 4, and an unpaired Regional_Indicator is reported as 1
+	 * where terminals differ.  Upgrade path: there is none from a table,
+	 * because the information is not in Unicode; it needs the renderer,
+	 * which is explicitly not this library's job.  What is possible is to
+	 * expose the pieces (the cluster's code points and their widths) and
+	 * let a consumer with a font override the answer. */
+	base = gb_flags(cps[0]);
+	/* A flag.  Regional indicators are East_Asian_Width=N, so the widest
+	 * member of the pair is 1, and every terminal draws a flag in two
+	 * columns.  The pair is the only thing GB12/GB13 can produce, so the
+	 * test is "a cluster that starts with an RI and is longer than one". */
+	if (i > 1 && (base & 0x0F) == VTGB_REGIONAL_INDICATOR)
+		mx = 2;
+	/* An emoji presentation sequence (UTS #51): Emoji=Yes followed by
+	 * U+FE0F.  Not Extended_Pictographic -- U+0023 and the digits are
+	 * Emoji=Yes and are not Extended_Pictographic, and the keycaps built
+	 * on them are the common case. */
+	else if (vs16 && (base & VTGB_EMOJI_BIT))
+		mx = 2;
+	return mx;
+}

@@ -1,8 +1,9 @@
 # vtparse
 
 A byte-at-a-time VT500-series escape sequence parser in C11, implemented as the
-exact DEC/ECMA-48 state machine, with built-in UTF-8 decoding and `wcwidth`-style
-display widths and no dependencies beyond libc.
+exact DEC/ECMA-48 state machine, with built-in UTF-8 decoding, `wcwidth`-style
+display widths, UAX #29 grapheme cluster boundaries, and no dependencies beyond
+libc.
 
 ## Build and test
 
@@ -126,6 +127,31 @@ ok - fuzz: random bytes biased to lead/continuation bytes: 8000/8000 match CPyth
 # 88954 cases, 88954 agree, 0 differ
 ok - 88954/88954 sequences decode identically to CPython
 
+--- oracle 5: UAX #29 vs GraphemeBreakTest.txt
+# corpus /run/host/usr/share/unicode/ucd/auxiliary/GraphemeBreakTest.txt, vtparse grapheme table Unicode 18.0.0
+# rule 1.0       853 boundaries, 0 wrong
+# rule 4.0       121 boundaries, 0 wrong
+# ... one line per rule ...
+# rule 11.0        3 boundaries, 0 wrong
+ok - every line of the corpus parsed (0 rejected)
+ok - every case ends in a break, as GB2 says (0 did not)
+ok - no case exceeded the 64 code point buffer (0 did)
+ok - GraphemeBreakTest.txt: 853/853 cases, 2208/2208 boundaries
+ok - rule 3.0 decided 2 boundaries, 0 wrong
+ok - rule 6.0 decided 5 boundaries, 0 wrong
+ok - rule 7.0 decided 5 boundaries, 0 wrong
+ok - rule 8.0 decided 3 boundaries, 0 wrong
+ok - rule 9.0 decided 552 boundaries, 0 wrong
+ok - rule 9.1 decided 39 boundaries, 0 wrong
+ok - rule 9.2 decided 13 boundaries, 0 wrong
+ok - rule 9.3 decided 32 boundaries, 0 wrong
+ok - rule 11.0 decided 3 boundaries, 0 wrong
+ok - rule 12.0 decided 2 boundaries, 0 wrong
+ok - rule 13.0 decided 5 boundaries, 0 wrong
+ok - vtwidth_cluster of one code point == vtwidth, all 1114112 of them (0 differ, first U+0000)
+ok - a one code point cluster has length 1, all 1114112 of them (0 did not)
+# cluster widths (convention, no oracle): flag=2(2 cp) family=2(5 cp) keycap=2(3 cp) ksi=1(4 cp) e-acute=1(2 cp)
+
 --- CLI event stream
 ok - CLI event stream matches t/cli.expected
 
@@ -133,11 +159,18 @@ ok - CLI event stream matches t/cli.expected
 ok - 400kB of /dev/urandom through vtparse (8-bit)
 ok - 400kB of /dev/urandom through vtparse -u
 
-101 passed, 0 failed
+118 passed, 0 failed
 ```
 
-Also `make test-asan` (the same 98 tests under `-fsanitize=address,undefined`) and
-`make test-valgrind`.
+Also `make test-asan` (the same 118 assertions under
+`-fsanitize=address,undefined`) and `make test-valgrind`.
+
+15 of those 118 need `GraphemeBreakTest.txt`, which is not in this repository:
+on this machine the UCD is a flatpak host mount.  Without it `t/run.sh` prints
+a SKIP banner and the total drops to 104, one of which is the skip notice
+itself.  It is a banner and not a silent subtraction on purpose: a conformance
+score whose denominator can shrink without saying so is not a score.  The two
+exhaustive single-code-point checks need no corpus and still run.
 
 ## Usage
 
@@ -156,6 +189,23 @@ vtparse p;
 vtparse_init(&p, on_event, NULL, /* utf8 */ 1);
 vtparse_push(&p, buf, n);          /* as many times as you like */
 vtparse_flush(&p);                 /* end of input */
+```
+
+Grapheme clusters are a separate, equally non-allocating layer.  Two bytes of
+state, one code point in, one bit out:
+
+```c
+vtgb g;
+vtgb_init(&g);
+for (size_t i = 0; i < n; i++) {
+        if (vtgb_break(&g, cps[i]))
+                start_new_cell();      /* true for i == 0; that is GB1 */
+        add_to_cell(cps[i]);
+}
+
+/* Or, when the code points are already in an array: */
+size_t len;
+int cols = vtwidth_cluster(cps, n, &len);   /* the first cluster only */
 ```
 
 And from a shell:
@@ -238,25 +288,71 @@ complete it.  This is the same rule CPython uses, and that is what makes the
 comparison meaningful, not circular.
 
 3. libc `wcwidth(3)`.  `t/width_diff.c` compares `vtwidth()` with glibc over
-the entire BMP in `en_US.UTF-8`.  Agreement is **65433/65536 = 99.8428%**.  The
-103 disagreements are listed below, under Status, with the reason. They are not
-a bug to be fixed but a version skew to be known about.
+the entire BMP in `en_US.UTF-8`.  Agreement is **65437/65536 = 99.8489%**.  The
+99 disagreements are listed below, under Status, with the reason.  91 of them
+are version skew and 8 are a real difference of opinion about
+U+3248..U+324F.
 
 4. A corpus of sequences real programs emit.  `t/corpus_test.c`: 52 cases,
 each asserting an exact event stream including the per-byte `PUT`/`OSC_PUT`
 counts, and each replayed a second time one byte at a time to prove the chunking
 does not matter.
 
+5. The Unicode Consortium's `GraphemeBreakTest.txt`.  `t/grapheme_test.c`
+runs all **853/853** cases of the 18.0.0 conformance file, which is
+**2208/2208** individual boundary decisions.  Nothing is skipped and nothing is
+filtered; the denominator is the number of cases in the file.  This is the
+strongest oracle in the repository, stronger than the DEC table, because the
+people who wrote the rules also wrote the file that says what the rules do.
+
+The file marks each boundary with the rule number that decided it, and the
+test tallies by rule, because a grapheme test is the easiest thing in this
+repository to make vacuous.  Break everywhere is the right answer for every
+pair of Latin letters, so an ASCII-only corpus would score 100% against no
+implementation at all.  The counts say which rules were actually reached:
+
+| Rule | What it is | Boundaries decided |
+|---|---|---|
+| GB1/GB2 | start and end of text | 853 |
+| GB3 | CR x LF | 2 |
+| GB4/GB5 | around controls | 233 |
+| GB6/GB7/GB8 | Hangul syllable sequences | 13 |
+| GB9 | Extend and ZWJ | 552 |
+| GB9a/GB9b | SpacingMark, Prepend | 52 |
+| GB9c | Indic conjuncts (InCB) | 32 |
+| GB11 | emoji ZWJ sequences | 3 |
+| GB12/GB13 | regional indicator pairs (flags) | 7 |
+| GB999 | otherwise, break | 461 |
+
+Eleven of those rules are asserted individually to have decided at least one
+boundary and to have got all of them right, so a corpus that stopped covering
+flags or Hangul turns the suite red instead of quietly reporting an easier
+number.
+
+GB9c is the interesting one.  Unicode 18.0 restates it as
+`\p{InCB=Linker} \p{InCB=Extend}* x \p{InCB=Consonant}`, dropping the leading
+`\p{InCB=Consonant}` that 15.1 through 17.0 required.  An implementation
+written against the older text fails the case `11A3A x 11A0B`, a Zanabazar
+Square linker with no consonant before it.  This one was written against the
+18.0 text; the version matters and the conformance file is what proves which
+version you have.
+
 Supporting, not oracles: `make test-asan` and `make test-valgrind` over 400kB of
 `/dev/urandom` in both parser modes.  The no-allocation claim is the kind of
-thing a sanitizer can check and a reviewer cannot.
+thing a sanitizer can check and a reviewer cannot.  For the grapheme code it is
+checkable more directly still: `nm -u vtparse.o` prints nothing at all, so the
+translation unit has no undefined symbols and therefore cannot call `malloc`.
+`vtgb` is two bytes of state, the tables are `static const`, the binary search
+holds two `size_t`, and `vtwidth_cluster()` reads `cps[0..len)` where `len` is
+bounded by the `n` it was given.
 
 ## Status
 
 Works, tested, and used by the CLI in this repo: the full 14-state machine
 including DCS and the string states, 7-bit and 8-bit control introducers,
 parameters with the spec's clamping, intermediates, OSC/DCS payload accumulation,
-UTF-8 decoding with the maximal-subpart rule, and widths.
+UTF-8 decoding with the maximal-subpart rule, widths, and extended grapheme
+cluster boundaries at Unicode 18.0.0.
 
 ### The suite can tell a crash from a failure
 
@@ -305,8 +401,33 @@ NEW run():  ok=1  not-ok=1
   specifies. It is not pretty.
 - APC, PM and SOS payloads are discarded.  The table has no callbacks for
   them, so a Kitty graphics command vanishes entirely apart from its terminator.
-- No grapheme clustering.  `vtwidth()` is per codepoint, so a ZWJ emoji
-  family measures 2 per component instead of 2 total.
+- Grapheme clustering exists now (`vtgb_break()`, `vtwidth_cluster()`), but
+  `vtwidth()` still does not use it.  A `PRINT` event is one code point and
+  carries no cluster information, so a consumer that wants cluster widths has
+  to run `vtgb_break()` over the code points itself.  Wiring segmentation into
+  the parser would mean buffering a cluster of unbounded length inside the
+  struct, which is the one thing this library will not do.
+- **The cluster width convention has no external oracle.**  UAX #29 says where
+  a cluster begins and ends; it says nothing about how many columns one takes,
+  and no file in the UCD does either.  `GraphemeBreakTest.txt` checks the
+  segmentation and checks nothing about the width.  What `vtwidth_cluster()`
+  returns is therefore a convention, written down here so it can be argued
+  with: the widest `vtwidth()` in the cluster, except that a cluster starting
+  with a Regional_Indicator and longer than one code point is 2 (a flag; the
+  RIs themselves are East_Asian_Width=N, so the widest member is 1 and that is
+  not what any terminal draws), and a cluster containing U+FE0F whose base is
+  Emoji=Yes is 2 (an emoji presentation sequence per UTS #51, which is what
+  makes a keycap like `#` U+FE0F U+20E3 two columns rather than one).
+  Consequences worth knowing: a lone unpaired Regional_Indicator is 1, a
+  Devanagari conjunct is 1 no matter how many code points it has, and nothing
+  here knows what a particular font will actually do.
+- Two mutations survive, both in that convention and both for the same
+  reason.  Deleting the Regional_Indicator width rule, and deleting the
+  Emoji-plus-U+FE0F rule, each leave the suite fully green, because there is
+  nothing outside this repository to disagree with them.  Ten other mutations
+  in the grapheme code are caught; these two are not, and that is the honest
+  shape of the claim rather than a gap to be papered over with an expectation
+  written by the same hand that wrote the code.
 - No charset state.  `ESC ( 0` is reported and forgotten; DEC line-drawing
   output renders as `lqqqk`.
 - Payloads over 512 bytes are truncated (`str_truncated` is set).  A Sixel
@@ -423,6 +544,22 @@ definition.  When a partial character is interrupted by an ESC, the decoder
 reports U+FFFD and asks the caller to re-push the byte, which then reaches the
 state machine, so a write split in the middle of a character does not eat the
 escape sequence that follows it.
+
+The grapheme table is one sorted range array of 1669 entries, each a code
+point range and a byte holding four properties at once: the
+Grapheme_Cluster_Break class in bits 0-3, Indic_Conjunct_Break in bits 4-5,
+Extended_Pictographic in bit 6 and Emoji in bit 7.  Ranges whose four
+properties are all at their default are not in the table at all, which is
+most of Unicode.  It is generated by `tools/gen_grapheme.py` and committed,
+same as the width table, and for the reason the generator's header gives:
+2700 ranges typed by hand are 2700 chances to be wrong somewhere nobody
+looks.
+
+The break machine is two bytes of state, which is all the rules need: the
+previous code point's class, the parity of the Regional_Indicator run ending
+at it, whether an `ExtPict Extend* ZWJ` ends at it, and whether an
+`InCB=Linker InCB=Extend*` ends at it.  UAX #29 needs no lookahead, so the
+"never read past the byte you were given" rule survives unchanged.
 
 The width table is three sorted range arrays (zero-width, wide, non-printable)
 with a binary search, generated by `tools/gen_width.py` from the

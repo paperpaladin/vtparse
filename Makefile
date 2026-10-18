@@ -8,11 +8,11 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -g -ffile-prefix-map=$(CURDIR)=
 ASAN     = -std=c11 -Wall -Wextra -Wpedantic -O1 -g \
 	   -fsanitize=address,undefined -fno-omit-frame-pointer
 
-.PHONY: all test test-asan test-valgrind gen-width clean
+.PHONY: all test test-asan test-valgrind gen-width gen-grapheme clean
 
 all: vtparse
 
-vtparse: main.c vtparse.c vtparse.h width_table.h
+vtparse: main.c vtparse.c vtparse.h width_table.h grapheme_table.h
 	$(CC) $(CFLAGS) -o $@ main.c vtparse.c
 
 test: all
@@ -48,6 +48,13 @@ test-valgrind:
 gen-width:
 	python3 tools/gen_width.py width_table.h
 
+# Same deal for the UAX #29 tables.  Both generators read the same UCD and
+# both print the version into their header; they must agree, because one
+# library with two Unicode versions in it is the bug this pair was written to
+# avoid.
+gen-grapheme:
+	python3 tools/gen_grapheme.py grapheme_table.h
+
 clean:
 	rm -f vtparse t/table_test t/corpus_test t/width_diff t/utf8_dump \
-		t/cli.got t/width_diff.out
+		t/grapheme_test t/cli.got t/width_diff.out
