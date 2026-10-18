@@ -8,3 +8,5 @@ t/width_diff
 t/utf8_dump
 t/cli.got
 t/width_diff.out
+# python bytecode cache from tools/*.py
+__pycache__/

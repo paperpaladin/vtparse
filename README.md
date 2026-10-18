@@ -98,22 +98,19 @@ ok - width above U+10FFFF == -1
 ok - vtparse struct is 664 bytes, no heap needed
 
 --- oracle 2: width vs libc wcwidth(3) over the BMP
-# locale=en_US.UTF-8, vtparse table Unicode 15.1.0
-# U+0897..U+0897  vtparse=-1 glibc=0
-# U+1B4E..U+1B4F  vtparse=-1 glibc=1
-# U+1B7F..U+1B7F  vtparse=-1 glibc=1
-# U+1C89..U+1C8A  vtparse=-1 glibc=1
-# U+2427..U+2429  vtparse=-1 glibc=1
-# U+2630..U+2637  vtparse=1 glibc=2
-# U+268A..U+268F  vtparse=1 glibc=2
-# U+31E4..U+31E5  vtparse=-1 glibc=2
-# U+3248..U+324F  vtparse=1 glibc=2
-# U+4DC0..U+4DFF  vtparse=1 glibc=2
-# U+A7CB..U+A7CD  vtparse=-1 glibc=1
-# U+A7DA..U+A7DC  vtparse=-1 glibc=1
-# 65433 agree, 103 differ in 12 ranges, 99.8428% agreement
-ok - vtwidth agrees with wcwidth(3) on 65433/65536 BMP codepoints (99.8428%)
-ok - 103 disagreements reported as 12 ranges
+# locale=en_US.UTF-8, vtparse table Unicode 18.0.0
+# U+0558..U+0558  vtparse=1 glibc=-1
+# U+058B..U+058C  vtparse=1 glibc=-1
+# U+05C8..U+05C9  vtparse=0 glibc=-1
+# U+088F..U+088F  vtparse=1 glibc=-1
+# U+0B53..U+0B54  vtparse=0 glibc=-1
+# U+0C5C..U+0C5C  vtparse=1 glibc=-1
+# U+0CDC..U+0CDC  vtparse=1 glibc=-1
+# ... 16 more ranges ...
+# U+FDC8..U+FDCE  vtparse=1 glibc=-1
+# 65437 agree, 99 differ in 24 ranges, 99.8489% agreement
+ok - vtwidth agrees with wcwidth(3) on 65437/65536 BMP codepoints (99.8489%)
+ok - 99 disagreements reported as 24 ranges
 
 --- oracle 3: UTF-8 decode vs CPython
 ok - every single byte: 256/256 match CPython
@@ -326,40 +323,69 @@ NEW run():  ok=1  not-ok=1
 
 ### The wcwidth disagreements, stated plainly
 
-103 of 65536 BMP codepoints, 12 ranges, 99.8428% agreement.  Every one is
-Unicode version skew: our table is generated from the `unicodedata` in python3
-3.13 (Unicode 15.1.0), and the glibc on this machine (Debian 2.41) ships
-width data from **Unicode 16.0**.
+99 of 65536 BMP codepoints, 24 ranges, 99.8489% agreement.  Our table is
+generated from the UCD on this machine (**Unicode 18.0.0**, via
+`tools/gen_width.py`); the glibc here (Debian 2.41) ships width data from
+**Unicode 16.0**.  The skew now runs the other way from how it used to: we are
+ahead of glibc rather than behind it.
 
-| Range | vtparse | glibc | Why |
-|---|---|---|---|
-| U+0897 | -1 | 0 | assigned in Unicode 16.0 (a combining mark, so width 0) |
-| U+1B4E..U+1B4F | -1 | 1 | assigned in 16.0 |
-| U+1B7F | -1 | 1 | assigned in 16.0 |
-| U+1C89..U+1C8A | -1 | 1 | assigned in 16.0 |
-| U+2427..U+2429 | -1 | 1 | assigned in 16.0 |
-| U+2630..U+2637 | 1 | 2 | East_Asian_Width became Wide in 16.0 (trigrams) |
-| U+268A..U+268F | 1 | 2 | East_Asian_Width became Wide in 16.0 (monograms, digrams) |
-| U+31E4..U+31E5 | -1 | 2 | assigned in 16.0, and Wide (CJK strokes) |
-| U+3248..U+324F | 1 | 2 | East_Asian_Width Ambiguous to Wide in 16.0 |
-| U+4DC0..U+4DFF | 1 | 2 | East_Asian_Width became Wide in 16.0 (Yijing hexagrams) |
-| U+A7CB..U+A7CD | -1 | 1 | assigned in 16.0 |
-| U+A7DA..U+A7DC | -1 | 1 | assigned in 16.0 |
+| Range | n | vtparse | glibc | Why |
+|---|---|---|---|---|
+| U+0558 | 1 | 1 | -1 | assigned in 18.0 |
+| U+058B..U+058C | 2 | 1 | -1 | assigned in 18.0 |
+| U+05C8..U+05C9 | 2 | 0 | -1 | assigned in 18.0 (combining marks) |
+| U+088F | 1 | 1 | -1 | assigned in 17.0 |
+| U+0B53..U+0B54 | 2 | 0 | -1 | assigned in 18.0 (combining marks) |
+| U+0C5C | 1 | 1 | -1 | assigned in 17.0 |
+| U+0CDC | 1 | 1 | -1 | assigned in 17.0 |
+| U+1ACF..U+1AF0 | 34 | 0 | -1 | assigned in 17.0 and 18.0 (combining marks) |
+| U+208F | 1 | 1 | -1 | assigned in 18.0 |
+| U+209D..U+209F | 3 | 1 | -1 | assigned in 18.0 |
+| U+20C1..U+20C4 | 4 | 1 | -1 | assigned in 17.0 and 18.0 |
+| U+2B96 | 1 | 1 | -1 | assigned in 17.0 |
+| U+2E60..U+2E63 | 4 | 1 | -1 | assigned in 18.0 |
+| U+3248..U+324F | 8 | 1 | 2 | **not version skew**; see below |
+| U+A7CE..U+A7CF | 2 | 1 | -1 | assigned in 17.0 |
+| U+A7D2 | 1 | 1 | -1 | assigned in 17.0 |
+| U+A7D4 | 1 | 1 | -1 | assigned in 17.0 |
+| U+A7DD | 1 | 1 | -1 | assigned in 18.0 |
+| U+A7E2 | 1 | 1 | -1 | assigned in 18.0 |
+| U+A7F1 | 1 | 1 | -1 | assigned in 17.0 |
+| U+AB6C..U+AB6D | 2 | 1 | -1 | assigned in 18.0 |
+| U+FBC3..U+FBD2 | 16 | 1 | -1 | assigned in 17.0 |
+| U+FD90..U+FD91 | 2 | 1 | -1 | assigned in 17.0 |
+| U+FDC8..U+FDCE | 7 | 1 | -1 | assigned in 17.0 |
 
-So: 17 codepoints that did not exist in our Unicode version (we return -1 for
-unassigned, as glibc does for codepoints it does not know) and 86 whose East
-Asian width was widened by Unicode 16.0.  Nothing here is a disagreement about
-what a character *is*. It is a disagreement about *when* the two tables were
-built.  `make gen-width` on a newer python3 closes most of the gap and will open
-a different one.  Two deliberate non-drift choices, both made to match glibc and
-both defensible on their own terms: U+00AD SOFT HYPHEN is width 1, not 0,
-and the Arabic prepended-concatenation marks (U+0600..U+0605 and friends) are
-width 1 despite being category Cf, because Unicode excludes them from
+So 91 of the 99 are characters that did not exist in Unicode 16.0, which is
+what glibc knows; glibc returns -1 for a codepoint it has never heard of,
+exactly as we do.  The ages come from `DerivedAge.txt`, not from guesswork.
+
+The remaining 8 are a real disagreement and the README used to get them
+wrong.  It claimed U+3248..U+324F (CIRCLED NUMBER TEN ON BLACK SQUARE and
+friends) had their East_Asian_Width "widened to Wide in Unicode 16.0".  They
+did not.  `EastAsianWidth.txt` at 18.0.0 still says `3248..324F ; A`,
+Ambiguous, and so did 15.1.0.  glibc calls them width 2 anyway.  That is
+glibc departing from the UCD, not Unicode moving, and the old explanation was
+invented to make a number go away.
+
+Two deliberate non-drift choices remain, both made to match glibc and both
+defensible on their own terms: U+00AD SOFT HYPHEN is width 1, not 0, and the
+Arabic prepended-concatenation marks (U+0600..U+0605 and friends) are width 1
+despite being category Cf, because Unicode excludes them from
 Default_Ignorable_Code_Point.
 
 Above the BMP the comparison is not run, because glibc's own tables and ours
 disagree mostly about recently-added emoji and the result would be noise rather
-than signal; the spot checks in the corpus test cover U+1F44D.
+than signal; the spot checks in the corpus test cover U+1F44D.  That blind spot
+is why `tools/gen_width.py` carries its own self-check: it rebuilds the table a
+second way, from python3's `unicodedata`, and splits the differences into
+"newly assigned" (22995 at the moment, 15626 of them CJK Extension J in plane
+3), "changed while assigned in both" (189, the Yijing trigrams and hexagrams
+becoming Wide in 16.0 among them), and "went from assigned to unassigned",
+which must be zero and exits non-zero if it is not.  That last bucket is the
+one that catches a mis-parse of the `, First>` / `, Last>` range convention in
+`UnicodeData.txt`, which covers all of plane 2 and 3 and which no test in this
+repo would otherwise see.
 
 ## Design
 
@@ -399,9 +425,10 @@ state machine, so a write split in the middle of a character does not eat the
 escape sequence that follows it.
 
 The width table is three sorted range arrays (zero-width, wide, non-printable)
-with a binary search, generated by `tools/gen_width.py` from python3's
-`unicodedata` and committed.  Building vtparse needs gcc and nothing else;
-`make gen-width` is a development step, not a build step.
+with a binary search, generated by `tools/gen_width.py` from the
+`UnicodeData.txt` and `EastAsianWidth.txt` of a UCD snapshot, and committed.
+Building vtparse needs gcc and nothing else; `make gen-width` is a development
+step, not a build step, and it needs the UCD, which is not in this repository.
 
 There is exactly one `shortcut:` marker in the library, on the decision to
 evaluate the table as a branch chain instead of precomputing `uint8_t[14][256]`.
