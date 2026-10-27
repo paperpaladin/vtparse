@@ -13,6 +13,11 @@ immediately: UTF-8 decoding and display width.
   accumulated string payload readable from the struct.
 - `vtutf8_push()` decodes bytes to codepoints with one U+FFFD per maximal
   ill-formed subpart; `vtwidth(cp)` returns -1/0/1/2 like `wcwidth(3)`.
+- `vtgb_break()` says where UAX #29 extended grapheme cluster boundaries fall,
+  one code point at a time and in two bytes of state; `vtwidth_cluster()`
+  segments one cluster out of an array and returns its display width.  The
+  boundaries have an oracle (`GraphemeBreakTest.txt`); the width does not, and
+  the README says so.
 - `vtparse` is a CLI that prints one line per event, and that is what makes all of
   the above testable from a shell.
 - Not in the contract: drawing, a screen model, terminfo, a pty, an allocator.
@@ -65,6 +70,14 @@ Ranked by how much each one would catch, strongest first.
    interleaved mid-sequence, truncation, 20 parameters and a clamped value.
    Each asserts the exact event stream including per-byte payload counts.
 
+5. The Unicode Consortium's `GraphemeBreakTest.txt`.  `t/grapheme_test.c`
+   runs all 853 cases of the 18.0.0 file, 2208 boundary decisions, and tallies
+   them by the rule number the file names, because break-everywhere scores
+   100% on an ASCII corpus.  It is the only oracle here written by the authors
+   of the specification it tests.  It is not in the repository (the UCD is a
+   host mount), so the harness announces the skip rather than quietly dropping
+   15 assertions.
+
 Secondary: `make test-asan` (`-fsanitize=address,undefined`) and
 `make test-valgrind` over 400kB of `/dev/urandom` in both parser modes, because
 "never allocates, never reads past the byte it was given" is a claim a
@@ -79,9 +92,11 @@ sanitizer can check and a reviewer cannot.
   vtparse does not know what SGR 38 means.
 - ICU, or any library.  The width table is built in; `tools/gen_width.py` is a
   development tool whose output is committed.
-- Grapheme clustering.  Width is per codepoint, so a ZWJ emoji family reports
-  the sum of its parts.  This is wrong for rendering and right for the layer
-  below rendering; see Milestone 1.
+- Grapheme clustering inside the parser.  `vtgb_break()` and
+  `vtwidth_cluster()` exist, but a `PRINT` event is still one code point:
+  segmenting inside the parser would mean buffering a cluster of unbounded
+  length in the struct, and the struct does not grow.  The consumer runs the
+  break machine itself, over two bytes of state.
 - Charset state (SCS, G0-G3, the DEC line-drawing set).  `ESC ( 0` is reported
   faithfully and then forgotten.
 - Being bug-compatible with xterm where xterm departs from the published table.
@@ -119,36 +134,48 @@ sanitizer can check and a reviewer cannot.
 
 ### Milestone 1: the things a terminal actually needs next
 
-- [ ] grapheme cluster segmentation (UAX #29) with a `vtwidth_cluster()` entry
+- [x] grapheme cluster segmentation (UAX #29) with a `vtwidth_cluster()` entry
       point
       - why: per-codepoint width is wrong for every flag, skin-tone emoji and
         Devanagari syllable, and consumers currently have to guess.
+      - done: `tools/gen_grapheme.py` builds `grapheme_table.h` (1669 ranges,
+        one byte each: Grapheme_Cluster_Break, Indic_Conjunct_Break,
+        Extended_Pictographic, Emoji) from the 18.0.0 UCD on this machine.
+        `vtgb_break()` is the incremental boundary machine, two bytes of state
+        and no lookahead; `vtwidth_cluster()` segments one cluster out of an
+        array and gives it a width.  `t/grapheme_test.c` runs
+        `GraphemeBreakTest.txt`: **853/853 cases, 2208/2208 boundaries**,
+        nothing skipped and nothing filtered, with the decisions tallied by
+        the rule number the file itself names so that a corpus which stopped
+        covering flags or Hangul fails instead of scoring an easier 100%.
+        Eleven rules are asserted individually to have decided at least one
+        boundary.
+      - done: the blocker this item used to name, a width table generated at
+        15.1.0 next to UCD files at 18.0.0, was cleared first and in its own
+        commit, by regenerating `width_table.h` from the UCD at 18.0.0.  Both
+        generators now read the same snapshot and print the version into their
+        header.
+      - done: GB9c is the rule the version mattered for.  Unicode 18.0
+        restates it as `\p{InCB=Linker} \p{InCB=Extend}* x
+        \p{InCB=Consonant}`, dropping the leading `\p{InCB=Consonant}` that
+        15.1 through 17.0 required, and the 18.0 conformance file has cases
+        (`11A3A x 11A0B`) that the older form gets wrong.
+      - done, and written into the README rather than hidden: the cluster
+        WIDTH convention has no oracle.  UAX #29 fixes the boundaries and says
+        nothing about columns.  Two mutations therefore survive, the
+        Regional_Indicator rule and the Emoji-plus-U+FE0F rule; ten others in
+        the grapheme code are caught.
       - oracle, located: `GraphemeBreakTest.txt` is the Unicode Consortium's
         own conformance file and it is on this machine, at
         `/run/host/usr/share/unicode/ucd/auxiliary/`. 853 cases, each one a
         sequence of code points with every boundary marked, written by the
         people who wrote the rules. That is a stronger authority than this repo
         has for anything else, including the DEC table.
-      - the data the rules need is there too, all at 18.0.0:
-        `auxiliary/GraphemeBreakProperty.txt` for the main property,
-        `emoji/emoji-data.txt` for `Extended_Pictographic` (GB11, 456 ranges),
-        and `DerivedCoreProperties.txt` for `Indic_Conjunct_Break` (GB9c, 516
-        lines), the rule added in 15.1 and the one most
-        implementations get wrong.
-      - the blocker is a version conflict instead of missing data. `width_table.h`
-        says it was generated from "Unicode 15.1.0, as shipped with the python3
-        that ran the generator", and the UCD files here are 18.0.0. Generating
-        a grapheme table from 18.0.0 next to a width table from 15.1.0 gives
-        one library two Unicode versions, and the conformance file would then
-        be testing one of them against data from the other. So this item has to
-        start by deciding which version the repo targets and regenerating the
-        width table to match, which is its own change, with its own
-        3584-pair re-verification against the DEC table, and should be the
-        commit before this one.
-      - note that the UCD lives on a flatpak host mount, not in this
-        container's own filesystem, so the generated tables must be committed
-        (as `width_table.h` already is) and the harness must skip loudly if the
-        corpus is absent, the way jail's does for Landlock.
+      - the harness skips loudly when the corpus is absent, the way jail's does
+        for Landlock: `t/run.sh` prints a banner saying that 15 of the 118
+        assertions are absent rather than passing, and the two exhaustive
+        single-code-point checks, which need no corpus, still run.
+
 - [ ] sub-parameter support, so `SGR 38:2::10:20:30` dispatches instead of
       going to CSI_IGNORE
       - why: the published table predates ECMA-48 colon sub-parameters, and
@@ -176,11 +203,19 @@ sanitizer can check and a reviewer cannot.
 - [ ] a `-DVTPARSE_FUZZ` libFuzzer entry point and a seed corpus
       - why: 400kB of `/dev/urandom` per run is a smoke test, not coverage-
         guided fuzzing, and this code exists to eat hostile input.
-- [ ] regenerate the width table from UnicodeData.txt directly instead of via
+- [x] regenerate the width table from UnicodeData.txt directly instead of via
       python3's `unicodedata`
       - why: the Unicode version would then be pinned by the repo,
         not by whichever python3 ran the generator, the cause of the
         entire wcwidth disagreement list.
+      - done ahead of schedule, because the grapheme item could not start
+        until the two tables came from one UCD snapshot.  `tools/gen_width.py`
+        reads UnicodeData.txt and EastAsianWidth.txt; the table is 18.0.0 and
+        says so.  The old rule survives inside the generator as a self-check
+        and the differences are classified rather than counted, because an
+        assigned-to-unassigned difference means the First/Last range parse is
+        wrong and nothing else would notice: t/width_diff.c walks the BMP
+        only, and that parse covers planes 2 and 3.
 - [ ] UTF-8 encode, and a width-aware column-truncation helper
       - why: every consumer of this library writes both of those itself within
         a day.

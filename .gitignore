@@ -10,3 +10,4 @@ t/cli.got
 t/width_diff.out
 # python bytecode cache from tools/*.py
 __pycache__/
+t/grapheme_test
